@@ -139,9 +139,19 @@ def read_ratio(bgr_patch, spec: BarSpec):
     if spec.reversed_:
         filled = filled[::-1]
 
-    # 왼쪽부터 연속으로 채워진 길이 — 중간에 끊긴 뒤의 잔여물은 무시한다
+    # 바 앞에 테두리나 "HP"/"MP" 같은 글자가 걸려 들어오는 일이 흔하다.
+    # 그 부분은 바 색이 아니므로 첫 열이 비어 보이고, 그대로 세면 0% 가
+    # 나온다. 앞쪽 빈 구간을 건너뛰고 거기서부터 잰다.
+    lead = 0
+    limit = int(cols * 0.35)          # 이보다 많이 비었으면 정말 빈 바다
+    while lead < cols and not filled[lead] and lead < limit:
+        lead += 1
+    if lead >= cols:
+        return 0.0
+
+    usable = cols - lead
     run = 0
-    for f in filled:
+    for f in filled[lead:]:
         if not f:
             break
         run += 1
@@ -151,8 +161,9 @@ def read_ratio(bgr_patch, spec: BarSpec):
     total = int(filled.sum())
     if run == 0 and total > cols * 0.5:
         run = total
+        usable = cols
 
-    return max(0.0, min(1.0, run / float(cols)))
+    return max(0.0, min(1.0, run / float(max(1, usable))))
 
 
 class VitalsReader:

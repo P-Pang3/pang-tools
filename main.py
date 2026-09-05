@@ -668,6 +668,13 @@ class MacroApp:
             "값이 실제와 다르면 바 안쪽만 다시 잡아주세요.")
 
     def _sync_bar_labels(self):
+        """바 등록 상태와 지금 읽히는 값을 함께 보여준다.
+
+        등록만 확인해서는 제대로 잡았는지 알 수 없다. 실제로 몇 %로
+        읽히는지 보여야 엉뚱한 곳을 잡았을 때 바로 드러난다.
+        (HP 바를 지정한 줄 알았는데 MP 를 잡아둔 일이 있었다.)
+        """
+        live = self._read_bars_now()
         for which, lab in (("hp", getattr(self, "hp_bar_label", None)),
                            ("mp", getattr(self, "mp_bar_label", None))):
             if lab is None:
@@ -675,10 +682,40 @@ class MacroApp:
             d = self.config_data.get(f"{which}_bar")
             if isinstance(d, dict) and d.get("rect"):
                 r = d["rect"]
-                lab.config(text=f"{r[2]}×{r[3]} 등록됨", fg=COLOR_OK)
+                val = live.get(which)
+                if val is None:
+                    lab.config(text=f"{r[2]}×{r[3]} 등록됨", fg=COLOR_OK)
+                else:
+                    lab.config(text=f"{r[2]}×{r[3]} · 지금 {val*100:.0f}%",
+                               fg=COLOR_OK)
             else:
-                lab.config(text="지정 안 됨",
-                           fg=COLOR_WARN if which == "hp" else COLOR_SUBTEXT)
+                lab.config(text="지정 안 됨 — 이 기능이 동작하지 않습니다",
+                           fg=COLOR_WARN)
+
+    def _read_bars_now(self) -> dict:
+        """지금 화면에서 HP/MP 를 한 번 읽는다. 설정 화면 확인용."""
+        out = {}
+        try:
+            from core.vitals import VitalsReader
+            import mss as _mss
+            import numpy as _np
+            import cv2 as _cv2
+        except Exception:
+            return out
+        cr = self.engine.window.client_rect()
+        if not cr:
+            return out
+        try:
+            with _mss.mss() as sct:
+                shot = sct.grab({"left": cr[0], "top": cr[1],
+                                 "width": cr[2], "height": cr[3]})
+                frame = _cv2.cvtColor(_np.asarray(shot), _cv2.COLOR_BGRA2BGR)
+            reader = VitalsReader(lambda: self.config_data)
+            hp, mp = reader.read(frame, cr, cr)
+            out["hp"], out["mp"] = hp, mp
+        except Exception:
+            pass
+        return out
 
     def _toggle_help(self):
         """사용법은 매번 읽는 것이 아니라 기본으로 접어둔다."""
@@ -757,7 +794,7 @@ class MacroApp:
         # 헤더
         hdr = tk.Frame(list_outer, bg="#E8EAEF")
         hdr.pack(fill="x")
-        cols = [("사용", 4), ("미리보기", 9), ("이름", 17)]
+        cols = [("사용", 4), ("미리보기", 13), ("이름", 17)]
         if HUNT_MODE:
             cols.append(("종류", 8))
         else:
@@ -817,10 +854,16 @@ class MacroApp:
                 side="left", padx=(6, 2))
 
             # 썸네일
-            thumb = tk.Label(row, bg=COLOR_CARD, width=7, height=3,
+            thumb = tk.Label(row, bg=COLOR_CARD, width=11, height=5,
                              relief="groove")
             thumb.pack(side="left", padx=(4, 8))
             self._load_thumb(thumb, t.get("file", ""))
+            # 눌러서 원본 크기로 — 목록에서도 작아 헷갈릴 때가 있다
+            fname = t.get("file", "")
+            tname = t.get("name", "?")
+            thumb.config(cursor="hand2")
+            thumb.bind("<Button-1>",
+                       lambda e, f=fname, n=tname: self._show_template(f, n))
 
             # 이름
             tk.Label(row, text=t.get("name", "?"),
@@ -859,6 +902,49 @@ class MacroApp:
 
             self._tpl_row_vars.append((enabled_var, thr_var, kind_var))
 
+    def _show_template(self, filename: str, name: str):
+        """캡처한 이미지를 원본 크기로 띄운다.
+
+        목록의 미리보기는 작아서 비슷한 몬스터끼리 구별이 안 된다.
+        """
+        if not HAS_PIL or not filename:
+            return
+        path = DATA_DIR / filename
+        if not path.exists():
+            messagebox.showwarning("없는 파일", f"{filename} 을 찾을 수 없습니다.")
+            return
+        try:
+            img = Image.open(str(path))
+        except Exception as e:
+            messagebox.showerror("열기 실패", str(e))
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title(f"템플릿 — {name}")
+        win.configure(bg=COLOR_BG)
+        win.transient(self.root)
+
+        # 너무 작으면 알아보기 어렵다. 4배까지 키워서 보여준다.
+        scale = 1
+        while img.width * (scale + 1) <= 320 and scale < 4:
+            scale += 1
+        big = img.resize((img.width * scale, img.height * scale),
+                         Image.NEAREST) if scale > 1 else img
+        photo = ImageTk.PhotoImage(big)
+
+        tk.Label(win, image=photo, bg=COLOR_BG,
+                 highlightbackground=COLOR_BORDER,
+                 highlightthickness=1).pack(padx=16, pady=(16, 6))
+        win._photo = photo
+        tk.Label(win, text=f"{name}   ·   {img.width}×{img.height} px"
+                           + (f"   (×{scale} 확대)" if scale > 1 else ""),
+                 font=("맑은 고딕", 9), bg=COLOR_BG,
+                 fg=COLOR_SUBTEXT).pack(pady=(0, 4))
+        tk.Label(win, text=filename, font=("맑은 고딕", 8),
+                 bg=COLOR_BG, fg=COLOR_SUBTEXT).pack(pady=(0, 12))
+        win.bind("<Escape>", lambda e: win.destroy())
+        win.focus_force()
+
     def _load_thumb(self, label: tk.Label, filename: str):
         if not HAS_PIL or not filename:
             return
@@ -867,9 +953,14 @@ class MacroApp:
             if not fpath.exists():
                 return
             img = Image.open(str(fpath))
-            img.thumbnail((56, 48), Image.LANCZOS)
+            # 작은 아이콘으로는 어떤 몬스터인지 알아볼 수 없다.
+            # 목록에서 바로 구별되도록 키운다.
+            img.thumbnail((88, 76), Image.LANCZOS)
             photo = ImageTk.PhotoImage(img)
-            label.config(image=photo)
+            # width/height 는 이미지가 붙으면 픽셀 단위로 해석된다.
+            # 문자 기준으로 잡아둔 값을 그대로 두면 그림이 그만큼 잘린다.
+            label.config(image=photo,
+                         width=photo.width(), height=photo.height())
             label._photo = photo  # GC 방지
         except Exception:
             pass
@@ -929,7 +1020,9 @@ class MacroApp:
             cropped.save(str(fpath))
 
             templates = self.config_data.setdefault("templates", [])
-            name = f"아이템_{len(templates) + 1}"
+            # 프로그램에 맞는 이름을 붙인다. 사냥에서 "아이템_1" 은 헷갈린다.
+            kind_name = "몬스터" if HUNT_MODE else "아이템"
+            name = f"{kind_name}_{len(templates) + 1}"
             threshold = self.config_data.get("default_threshold", 0.85)
             templates.append({
                 "name": name,
@@ -1638,9 +1731,20 @@ class MacroApp:
             pass
         self.root.after(700, self._tick_metrics)
 
+    _bar_tick = 0
+
     def _refresh_metrics(self):
         eng = self.engine
         running = eng.is_running()
+
+        # 설정 화면의 바 판독값을 가끔 갱신한다 (매번 캡처하면 무겁다)
+        if HUNT_MODE and hasattr(self, "hp_bar_label"):
+            self._bar_tick += 1
+            if self._bar_tick % 4 == 0:
+                try:
+                    self._sync_bar_labels()
+                except Exception:
+                    pass
 
         # 지표 타일
         if running:

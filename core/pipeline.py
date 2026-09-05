@@ -159,6 +159,18 @@ class Pipeline:
         else:
             self._log("🪟  창 필터 OFF")
         if self.config.get("combat_enabled", False):
+            # 바를 지정하지 않으면 회복도 위험 정지도 조용히 아무 일도 하지
+            # 않는다. 시작할 때 분명히 알려야 한다.
+            hp_bar = self.config.get("hp_bar")
+            if not (isinstance(hp_bar, dict) and hp_bar.get("rect")):
+                self._log("⚠  체력 바가 지정되지 않았습니다 — "
+                          "HP 물약도 위험 정지도 동작하지 않습니다")
+                self._log("     설정 탭 → 사냥 → 체력 바 [영역 지정] 을 눌러 "
+                          "화면의 HP 바를 드래그하세요")
+            mp_bar = self.config.get("mp_bar")
+            if (str(self._c("mp_potion_key", "")).strip()
+                    and not (isinstance(mp_bar, dict) and mp_bar.get("rect"))):
+                self._log("⚠  MP 물약 키는 있는데 마나 바가 지정되지 않았습니다")
             hp_key = str(self._c("hp_potion_key", "")).strip()
             tail = (f" \u00b7 HP \ubb3c\uc57d '{hp_key.upper()}'" if hp_key
                     else " \u00b7 \u26a0 HP \ubb3c\uc57d \ud0a4\uac00 \ube44\uc5b4 \uc788\uc2b5\ub2c8\ub2e4")
