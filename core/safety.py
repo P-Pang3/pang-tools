@@ -50,6 +50,7 @@ class Guard:
         self._window_gone_since = 0.0
         self._consec_fail = 0
         self._last_verdict = OK
+        self._drift_hits = 0
 
     def _c(self, key, default):
         try:
@@ -65,6 +66,7 @@ class Guard:
         self._window_gone_since = 0.0
         self._consec_fail = 0
         self._last_verdict = OK
+        self._drift_hits = 0
 
     # ------------------------------------------------------------------
     def note_failure(self):
@@ -114,14 +116,26 @@ class Guard:
         except Exception:
             return _OK
 
-        tol = float(self._c("user_move_tolerance_px", 6))
-        if abs(x - expected[0]) > tol or abs(y - expected[1]) > tol:
-            hold = float(self._c("user_pause_sec", 4))
-            self._user_touch_until = now + hold
-            # 기준점을 현재 위치로 옮겨 같은 이동으로 두 번 걸리지 않게 한다
-            self._human.last_moved_to = (x, y)
-            return Verdict(PAUSE, f"사용자 조작 감지 — {hold:.0f}초 대기")
-        return _OK
+        tol = float(self._c("user_move_tolerance_px", 25))
+        off = abs(x - expected[0]) > tol or abs(y - expected[1]) > tol
+        if not off:
+            self._drift_hits = 0
+            return _OK
+
+        # 한 번 어긋난 것만으로 물러나지 않는다. 매크로가 커서를 옮기는
+        # 순간과 검사가 겹치면 한 번쯤은 어긋나 보인다. 사람이 정말
+        # 만졌다면 다음 검사에도 계속 어긋나 있다.
+        need = max(1, int(self._c("user_move_hits", 2)))
+        self._drift_hits += 1
+        if self._drift_hits < need:
+            return _OK
+
+        self._drift_hits = 0
+        hold = float(self._c("user_pause_sec", 4))
+        self._user_touch_until = now + hold
+        # 기준점을 현재 위치로 옮겨 같은 이동으로 두 번 걸리지 않게 한다
+        self._human.last_moved_to = (x, y)
+        return Verdict(PAUSE, f"사용자 조작 감지 — {hold:.0f}초 대기")
 
     def _check_window(self) -> Verdict:
         """게임 창이 사라졌는가. 잠깐 없어지는 것과 종료를 구분한다."""

@@ -16,7 +16,8 @@ class Hand:
     def cursor(self): return self.pos
 
 CFG = {"failsafe_corner": True, "failsafe_margin_px": 3,
-       "pause_on_user_input": True, "user_move_tolerance_px": 6,
+       "pause_on_user_input": True, "user_move_tolerance_px": 25,
+       "user_move_hits": 2,
        "user_pause_sec": 1, "stop_when_window_gone": True,
        "window_gone_grace_sec": 1, "window_lock": True,
        "max_consecutive_failures": 3}
@@ -43,7 +44,10 @@ g.reset()
 
 print("\n3) 사용자 개입 — 매크로가 옮기지 않은 커서 이동")
 hand.pos = (800, 620)                     # last_moved_to 와 다르다
-check("사람이 마우스를 만짐", PAUSE)
+# 한 번 어긋난 것만으로는 물러나지 않는다. 매크로가 커서를 옮기는 순간과
+# 검사가 겹치면 한 번쯤 어긋나 보인다 (실측: 245회 검사 중 233회 오탐).
+check("한 번만으로는 안 멈춤", OK)
+check("연속으로 어긋나면 멈춤", PAUSE)
 check("대기 중에는 계속 PAUSE", PAUSE)
 time.sleep(1.1)
 check("1초 뒤 자동 재개", OK)

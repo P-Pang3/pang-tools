@@ -188,9 +188,12 @@ class HumanInput:
         pts = self._bezier_path(sx, sy, tx, ty, steps)
         gap = (duration_ms / 1000.0) / steps
         for x, y in pts:
-            self.mouse.position = (int(round(x)), int(round(y)))
+            pos = (int(round(x)), int(round(y)))
+            self.mouse.position = pos
+            # 매 스텝 기준점을 갱신한다. 이동이 끝나야 갱신하면 그 사이에
+            # 감시자가 "사용자가 마우스를 만졌다"고 오해한다.
+            self.last_moved_to = pos
             if stop_event is not None and stop_event.wait(gap):
-                self.last_moved_to = self.mouse.position
                 return True
             if stop_event is None:
                 time.sleep(gap)

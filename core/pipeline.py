@@ -355,7 +355,8 @@ class Pipeline:
         if action.kind == ATTACK and action.skill:
             if self.hands.press_key(action.skill, self._stop_event):
                 return None
-            self.policy.note_skill(action.skill)
+            # 쿨다운은 캐릭터가 도착해 시전하는 시점부터 재야 맞는다
+            self.policy.note_skill(action.skill, self._travel_ms(t) / 1000.0)
             self.stats.note_key()
             gap = self._cf("skill_click_gap_ms", 90)
             if gap > 0 and self.hands.sleep_ms(gap, self._stop_event):
@@ -379,8 +380,30 @@ class Pipeline:
         self.guard.note_success()
 
         if action.kind == ATTACK:
-            return self._cf("attack_interval_ms", 1500)
+            travel = self._travel_ms(t)
+            if travel > 200:
+                self._log(f"  ↳ 이동 {travel/1000:.1f}초 예상 — 그만큼 더 기다림")
+            return self._cf("attack_interval_ms", 1500) + travel
         return None
+
+    def _travel_ms(self, target) -> float:
+        """캐릭터가 대상까지 걸어가는 데 걸릴 시간(ms) 추정.
+
+        이 게임은 클릭한 자리로 캐릭터가 이동한 뒤 공격한다. 캐릭터는
+        화면 중앙에 있다고 본다 (필요하면 char_offset 으로 보정).
+        """
+        if not self._c("char_travel_enabled", True):
+            return 0.0
+        snap = self._latest()
+        cr = snap.client_rect if snap else None
+        if not cr:
+            return 0.0
+        cx = cr[0] + cr[2] / 2.0 + self._cf("char_offset_x", 0)
+        cy = cr[1] + cr[3] / 2.0 + self._cf("char_offset_y", 0)
+        dist = ((target.x - cx) ** 2 + (target.y - cy) ** 2) ** 0.5
+        speed = max(50.0, self._cf("char_speed_px_sec", 300))
+        travel = dist / speed * 1000.0
+        return min(travel, self._cf("char_travel_max_ms", 4000))
 
     def _retarget(self, track) -> bool:
         """대상이 움직였으면 커서를 다시 맞춘다. 정지 요청이면 True.

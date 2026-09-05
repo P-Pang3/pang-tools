@@ -228,9 +228,14 @@ class CombatPolicy:
                 return key
         return None       # 전부 쿨다운 — 이번엔 클릭만
 
-    def note_skill(self, key):
+    def note_skill(self, key, delay_sec=0.0):
+        """스킬을 썼다고 기록한다.
+
+        delay_sec 은 캐릭터가 대상까지 가는 시간이다. 이 게임은 도착한
+        뒤에야 시전하므로, 쿨다운은 그 시점부터 재야 실제와 맞는다.
+        """
         if key:
-            self._last_skill[key] = time.monotonic()
+            self._last_skill[key] = time.monotonic() + max(0.0, delay_sec)
 
     # ------------------------------------------------------------------
     def _combat(self, snapshot, tracker, cursor):

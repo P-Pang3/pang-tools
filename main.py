@@ -156,6 +156,13 @@ DEFAULT_CONFIG = {
     # 시전이 끊기므로 넉넉히 기다린다.
     "buff_gap_ms": 2000,
     "attack_timeout_sec": 12,       # 이 시간 안에 못 잡으면 대상 교체
+    # 이 게임은 클릭하면 캐릭터가 대상까지 걸어간 뒤 시전한다.
+    # 그 시간을 빼먹으면 아직 시전도 안 했는데 쿨다운이 끝난 줄 안다.
+    "char_travel_enabled": True,
+    "char_speed_px_sec": 300,       # 캐릭터 이동 속도 (화면 픽셀/초)
+    "char_travel_max_ms": 4000,     # 아무리 멀어도 이만큼만 기다린다
+    "char_offset_x": 0,             # 캐릭터가 화면 중앙이 아니면 보정
+    "char_offset_y": 0,
     "engage_block_sec": 15,         # 포기한 대상을 다시 안 보는 시간
     # HP/MP 바 — 설정 탭에서 영역을 지정하면 채워진다
     "hp_bar": None,
@@ -173,7 +180,10 @@ DEFAULT_CONFIG = {
     "failsafe_corner": True,          # 커서를 좌상단 모서리로 → 즉시 정지
     "failsafe_margin_px": 3,
     "pause_on_user_input": True,      # 사람이 마우스를 만지면 일시정지
-    "user_move_tolerance_px": 6,
+    # 6px 은 너무 빡빡했다. 매크로가 커서를 옮기는 순간과 검사가 겹치면
+    # 오차가 나므로, 넉넉히 두고 연속으로 어긋날 때만 물러난다.
+    "user_move_tolerance_px": 25,
+    "user_move_hits": 2,
     "user_pause_sec": 4,
     "stop_when_window_gone": True,
     "window_gone_grace_sec": 5,
@@ -1258,6 +1268,21 @@ class MacroApp:
                      fg=COLOR_SUBTEXT).pack(side="left")
 
             row = tk.Frame(card, bg=COLOR_CARD)
+            row.pack(fill="x", padx=14, pady=(4, 4))
+            self.travel_var = tk.BooleanVar(value=True)
+            ttk.Checkbutton(
+                row, text="대상까지 걸어가는 시간 고려",
+                variable=self.travel_var).pack(side="left")
+            tk.Label(row, text="   이동 속도",
+                     font=("맑은 고딕", 10), bg=COLOR_CARD).pack(side="left")
+            self.speed_var = tk.StringVar(value="300")
+            ttk.Entry(row, textvariable=self.speed_var, width=6,
+                      justify="right").pack(side="left", padx=4)
+            tk.Label(row, text="px/초  (멀리 있는 대상에 스킬이 헛나가면 낮추세요)",
+                     font=("맑은 고딕", 9), bg=COLOR_CARD,
+                     fg=COLOR_SUBTEXT).pack(side="left")
+
+            row = tk.Frame(card, bg=COLOR_CARD)
             row.pack(fill="x", padx=14, pady=(4, 10))
             tk.Label(row, text="HP",
                      font=("맑은 고딕", 10), bg=COLOR_CARD).pack(side="left")
@@ -1448,6 +1473,8 @@ class MacroApp:
             self.mp_key_var.set(str(c.get("mp_potion_key", "")))
             self.mp_pct_var.set(str(c.get("mp_potion_percent", 30)))
             self.hp_halt_var.set(str(c.get("hp_halt_percent", 15)))
+            self.travel_var.set(bool(c.get("char_travel_enabled", True)))
+            self.speed_var.set(str(c.get("char_speed_px_sec", 300)))
             self._sync_bar_labels()
         self.failsafe_var.set(bool(c.get("failsafe_corner", True)))
         self.pause_user_var.set(bool(c.get("pause_on_user_input", True)))
@@ -1507,6 +1534,7 @@ class MacroApp:
                 raise ValueError("스캔 반경: 정수(px)")
             if HUNT_MODE:
                 c["combat_enabled"] = bool(self.combat_var.get())
+                c["char_travel_enabled"] = bool(self.travel_var.get())
                 skills = []
                 for kv, cv in self.skill_vars:
                     k = kv.get().strip()
@@ -1539,8 +1567,9 @@ class MacroApp:
                     c["hp_potion_percent"] = max(0, min(100, int(self.hp_pct_var.get() or "50")))
                     c["mp_potion_percent"] = max(0, min(100, int(self.mp_pct_var.get() or "30")))
                     c["hp_halt_percent"]   = max(0, min(100, int(self.hp_halt_var.get() or "0")))
+                    c["char_speed_px_sec"] = max(50, int(self.speed_var.get() or "300"))
                 except ValueError:
-                    raise ValueError("물약/정지 임계값: 정수(%)")
+                    raise ValueError("물약 임계값·이동 속도: 정수")
             c["failsafe_corner"] = bool(self.failsafe_var.get())
             c["pause_on_user_input"] = bool(self.pause_user_var.get())
             c["stop_when_window_gone"] = bool(self.stop_gone_var.get())
