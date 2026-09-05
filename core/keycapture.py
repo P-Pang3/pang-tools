@@ -155,3 +155,35 @@ class KeyCaptureEntry(tk.Frame):
             self.var.set(format_plain(base, mods))
         self._disarm()
         return "break"
+
+
+# ---------------------------------------------------------------
+# 시간 표기 — 설정은 ms 로 두고 화면에는 초로 보여준다
+# ---------------------------------------------------------------
+def sec_text(ms) -> str:
+    """밀리초를 사람이 읽는 초 문자열로.  1000 -> '1',  250 -> '0.25'
+
+    설정 파일은 계속 ms 를 쓴다. 바꾸면 이미 쓰던 사람의 설정이 깨지고,
+    내부 계산도 전부 손봐야 한다. 보여줄 때만 초로 옮긴다.
+    """
+    try:
+        v = float(ms) / 1000.0
+    except (TypeError, ValueError):
+        return "0"
+    # :g 는 불필요한 0 을 없앤다 (1.0 -> '1', 0.250 -> '0.25')
+    return f"{v:g}"
+
+
+def sec_to_ms(text, default=1000) -> int:
+    """초 문자열을 밀리초로.  '0.25' -> 250,  '1' -> 1000
+
+    비었거나 숫자가 아니면 기본값을 돌려준다 — 입력 중에 잠깐 빈 칸이
+    되는 것을 오류로 다루면 쓰기 불편하다.
+    """
+    try:
+        s = str(text).strip().replace("초", "").strip()
+        if not s:
+            return int(default)
+        return max(1, int(round(float(s) * 1000)))
+    except (TypeError, ValueError):
+        return int(default)

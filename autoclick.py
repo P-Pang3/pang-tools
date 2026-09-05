@@ -19,7 +19,8 @@ from tkinter import ttk, messagebox
 
 from core import geometry, paths
 from core.actuation import HumanInput
-from core.keycapture import KeyCaptureEntry, pretty as key_pretty
+from core.keycapture import (KeyCaptureEntry, pretty as key_pretty,
+                             sec_text, sec_to_ms)
 from core.updateui import UpdateBar, version_text
 from core.window import GameWindow, foreground_title, window_at
 
@@ -433,13 +434,13 @@ class AutoClickApp:
         self.interval_var = tk.StringVar()
         ttk.Entry(row, textvariable=self.interval_var, width=8,
                   justify="right").pack(side="left", padx=6)
-        tk.Label(row, text="ms", font=("맑은 고딕", 10),
+        tk.Label(row, text="초", font=("맑은 고딕", 10),
                  bg=COLOR_CARD).pack(side="left")
-        for label, ms in (("50", 50), ("100", 100), ("500", 500),
-                          ("1000", 1000)):
+        # 자주 쓰는 값은 눌러서 넣는다
+        for label in ("0.05", "0.1", "0.5", "1"):
             HoverButton(row, bg="#78909C", hover_bg="#546E7A", text=label,
                         font=("맑은 고딕", 8), padx=7, pady=1,
-                        command=lambda v=ms: self.interval_var.set(str(v))
+                        command=lambda v=label: self.interval_var.set(v)
                         ).pack(side="left", padx=2)
 
         row = tk.Frame(card, bg=COLOR_CARD)
@@ -460,7 +461,7 @@ class AutoClickApp:
         self.hold_var = tk.StringVar()
         ttk.Entry(row, textvariable=self.hold_var, width=6,
                   justify="right").pack(side="left", padx=6)
-        tk.Label(row, text="ms   (게임이 반응 없으면 80~120 으로 늘려보세요)",
+        tk.Label(row, text="초   (반응이 없으면 0.1 ~ 0.12 로 늘려보세요)",
                  font=("맑은 고딕", 9), bg=COLOR_CARD,
                  fg=COLOR_SUBTEXT).pack(side="left")
 
@@ -561,9 +562,9 @@ class AutoClickApp:
     # ---------------- 설정 <-> UI ----------------
     def _sync_to_ui(self):
         c = self.cfg
-        self.interval_var.set(str(c.get("interval_ms", 1000)))
+        self.interval_var.set(sec_text(c.get("interval_ms", 1000)))
         self.jitter_var.set(str(c.get("jitter_percent", 0)))
-        self.hold_var.set(str(c.get("click_hold_ms", 60)))
+        self.hold_var.set(sec_text(c.get("click_hold_ms", 60)))
         self.delay_var.set(str(c.get("start_delay_sec", 3)))
         self.click_var.set(bool(c.get("do_click", True)))
         self.button_var.set(c.get("click_button", "left"))
@@ -583,14 +584,14 @@ class AutoClickApp:
     def _save_from_ui(self, silent=False):
         c = self.cfg
         try:
-            iv = int(self.interval_var.get() or "1000")
+            iv = sec_to_ms(self.interval_var.get(), 1000)
             if iv < 1:
-                raise ValueError("입력 간격은 1ms 이상이어야 합니다.")
+                raise ValueError("입력 간격이 너무 짧습니다.")
             c["interval_ms"] = iv
             c["jitter_percent"] = max(0, min(90,
                                              int(self.jitter_var.get() or "0")))
             c["limit_count"] = max(0, int(self.limit_var.get() or "0"))
-            c["click_hold_ms"] = max(5, int(self.hold_var.get() or "60"))
+            c["click_hold_ms"] = max(5, sec_to_ms(self.hold_var.get(), 60))
             c["start_delay_sec"] = max(0, int(self.delay_var.get() or "0"))
         except ValueError as e:
             messagebox.showerror("입력 오류", str(e))

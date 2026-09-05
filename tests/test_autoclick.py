@@ -26,13 +26,17 @@ app.engine.hands.press_key = fake_key
 
 def phase1():
     print("1) 설정 왕복")
-    app.interval_var.set("250"); app.jitter_var.set("10")
+    # 화면은 초 단위다. 0.25 초 -> 250 ms 로 저장되어야 한다.
+    app.interval_var.set("0.25"); app.jitter_var.set("10")
     app.key_on_var.set(True); app.key_var.set("f5"); app.limit_var.set("5")
     ok = app._save_from_ui(silent=True)
-    check("저장", ok and app.cfg["interval_ms"] == 250 and app.cfg["key"] == "f5",
+    check("저장 (0.25초 -> 250ms)",
+          ok and app.cfg["interval_ms"] == 250 and app.cfg["key"] == "f5",
           f'{app.cfg["interval_ms"]}ms / {app.cfg["key"]}')
     app._sync_to_ui()
-    check("로드", app.interval_var.get() == "250" and app.key_var.get() == "f5")
+    check("로드 (250ms -> 0.25초)",
+          app.interval_var.get() == "0.25" and app.key_var.get() == "f5",
+          app.interval_var.get())
 
     print("\n2) 횟수 제한 실행 (60ms x 8회)")
     app.cfg.update({"failsafe_corner": False, "do_click": True, "do_key": True,

@@ -18,7 +18,8 @@ from tkinter import ttk, messagebox
 import engine
 from core import geometry, paths
 from core.overlay import DebugOverlay
-from core.keycapture import KeyCaptureEntry, pretty as key_pretty
+from core.keycapture import (KeyCaptureEntry, pretty as key_pretty,
+                             sec_text, sec_to_ms)
 from core.profiles import ProfileStore
 from core.updateui import UpdateBar, version_text
 
@@ -675,18 +676,18 @@ class MacroApp:
 
         tk.Label(opts, text="이동 시간:",
                  font=("맑은 고딕", 10), bg=COLOR_BG).pack(side="left")
-        self.mouse_move_ms_var = tk.StringVar(value="120")
+        self.mouse_move_ms_var = tk.StringVar(value="0.12")
         ttk.Entry(opts, textvariable=self.mouse_move_ms_var,
                   width=5, justify="right").pack(side="left", padx=(4, 2))
-        tk.Label(opts, text="ms",
+        tk.Label(opts, text="초",
                  font=("맑은 고딕", 9), bg=COLOR_BG, fg=COLOR_SUBTEXT).pack(side="left")
 
         tk.Label(opts, text="    도착 후 대기:",
                  font=("맑은 고딕", 10), bg=COLOR_BG).pack(side="left")
-        self.pre_move_delay_var = tk.StringVar(value="20")
+        self.pre_move_delay_var = tk.StringVar(value="0.02")
         ttk.Entry(opts, textvariable=self.pre_move_delay_var,
                   width=5, justify="right").pack(side="left", padx=(4, 2))
-        tk.Label(opts, text="ms",
+        tk.Label(opts, text="초",
                  font=("맑은 고딕", 9), bg=COLOR_BG, fg=COLOR_SUBTEXT).pack(side="left")
 
         tk.Label(opts, text="    기본 임계값:",
@@ -922,8 +923,8 @@ class MacroApp:
 
     def _save_template_settings(self):
         try:
-            move_ms = max(0, int(self.mouse_move_ms_var.get() or "120"))
-            delay   = max(0, int(self.pre_move_delay_var.get() or "20"))
+            move_ms = max(0, sec_to_ms(self.mouse_move_ms_var.get(), 120))
+            delay   = max(0, sec_to_ms(self.pre_move_delay_var.get(), 20))
             thr     = max(0.5, min(1.0,
                           float(self.default_threshold_var.get() or "0.85")))
         except ValueError as e:
@@ -1002,10 +1003,10 @@ class MacroApp:
         row.pack(fill="x", padx=14, pady=(10, 6))
         tk.Label(row, text="클릭 주기:",
                  font=("맑은 고딕", 10), bg=COLOR_CARD).pack(side="left")
-        self.click_interval_var = tk.StringVar(value="1000")
+        self.click_interval_var = tk.StringVar(value="1.2")
         ttk.Entry(row, textvariable=self.click_interval_var,
                   width=8, justify="right").pack(side="left", padx=4)
-        tk.Label(row, text="ms   (권장: 500~1000)",
+        tk.Label(row, text="초   (권장 0.5 ~ 1)",
                  font=("맑은 고딕", 9), bg=COLOR_CARD,
                  fg=COLOR_SUBTEXT).pack(side="left")
 
@@ -1013,10 +1014,10 @@ class MacroApp:
         row.pack(fill="x", padx=14, pady=(0, 6))
         tk.Label(row, text="키 입력 주기:",
                  font=("맑은 고딕", 10), bg=COLOR_CARD).pack(side="left")
-        self.key_interval_var = tk.StringVar(value="200")
+        self.key_interval_var = tk.StringVar(value="0.2")
         ttk.Entry(row, textvariable=self.key_interval_var,
                   width=8, justify="right").pack(side="left", padx=4)
-        tk.Label(row, text="ms",
+        tk.Label(row, text="초",
                  font=("맑은 고딕", 9), bg=COLOR_CARD,
                  fg=COLOR_SUBTEXT).pack(side="left")
 
@@ -1039,10 +1040,10 @@ class MacroApp:
         row.pack(fill="x", padx=14, pady=(10, 4))
         tk.Label(row, text="스캔 주기:",
                  font=("맑은 고딕", 10), bg=COLOR_CARD).pack(side="left")
-        self.scan_interval_var = tk.StringVar(value="250")
+        self.scan_interval_var = tk.StringVar(value="0.25")
         ttk.Entry(row, textvariable=self.scan_interval_var,
                   width=7, justify="right").pack(side="left", padx=4)
-        tk.Label(row, text="ms    (권장 150~400)",
+        tk.Label(row, text="초    (권장 0.15 ~ 0.4)",
                  font=("맑은 고딕", 9), bg=COLOR_CARD,
                  fg=COLOR_SUBTEXT).pack(side="left")
 
@@ -1327,8 +1328,8 @@ class MacroApp:
         self.window_title_var.set(c.get("window_title", ""))
         self.window_proc_var.set(c.get("window_process", "Trickster.bin"))
         self.window_lock_var.set(bool(c.get("window_lock", True)))
-        self.click_interval_var.set(str(c.get("click_interval_ms", 1000)))
-        self.key_interval_var.set(str(c.get("key_interval_ms", 200)))
+        self.click_interval_var.set(sec_text(c.get("click_interval_ms", 1200)))
+        self.key_interval_var.set(sec_text(c.get("key_interval_ms", 200)))
         self.pickup_key_var.set(c.get("pickup_key", "z"))
         self.hotkey_toggle_var.set(c.get("hotkey_toggle", "<home>"))
         self.hotkey_stop_var.set(c.get("hotkey_stop", "<f12>"))
@@ -1340,7 +1341,7 @@ class MacroApp:
         self.work_max_var.set(str(c.get("work_max_minutes", 50)))
         self.rest_min_var.set(str(c.get("rest_min_minutes", 4)))
         self.rest_max_var.set(str(c.get("rest_max_minutes", 12)))
-        self.scan_interval_var.set(str(c.get("scan_interval_ms", 250)))
+        self.scan_interval_var.set(sec_text(c.get("scan_interval_ms", 250)))
         self.scan_radius_var.set(str(c.get("scan_radius_px", 0)))
         # 사냥 설정은 사냥 프로그램에만 위젯이 있다.
         # 안전 설정은 두 프로그램 공통이므로 이 블록 밖에 둔다.
@@ -1363,8 +1364,8 @@ class MacroApp:
         self.failsafe_var.set(bool(c.get("failsafe_corner", True)))
         self.pause_user_var.set(bool(c.get("pause_on_user_input", True)))
         self.stop_gone_var.set(bool(c.get("stop_when_window_gone", True)))
-        self.mouse_move_ms_var.set(str(c.get("mouse_move_ms", 120)))
-        self.pre_move_delay_var.set(str(c.get("pre_move_delay_ms", 20)))
+        self.mouse_move_ms_var.set(sec_text(c.get("mouse_move_ms", 120)))
+        self.pre_move_delay_var.set(sec_text(c.get("pre_move_delay_ms", 20)))
         self.default_threshold_var.set(str(c.get("default_threshold", 0.85)))
         self._update_hotkey_hint()
 
@@ -1374,16 +1375,11 @@ class MacroApp:
             c["window_title"] = self.window_title_var.get().strip()
             c["window_process"] = self.window_proc_var.get().strip()
             c["window_lock"]  = bool(self.window_lock_var.get())
-            try:
-                c["click_interval_ms"] = max(50,
-                    int(self.click_interval_var.get() or "1000"))
-            except ValueError:
-                raise ValueError("클릭 주기: 정수(ms)")
-            try:
-                c["key_interval_ms"] = max(50,
-                    int(self.key_interval_var.get() or "200"))
-            except ValueError:
-                raise ValueError("키 입력 주기: 정수(ms)")
+            # 화면은 초, 설정 파일은 ms. 여기서 한 번만 바꾼다.
+            c["click_interval_ms"] = max(
+                50, sec_to_ms(self.click_interval_var.get(), 1200))
+            c["key_interval_ms"] = max(
+                50, sec_to_ms(self.key_interval_var.get(), 200))
             c["pickup_key"] = (self.pickup_key_var.get() or "z").strip().lower()
             c["hotkey_toggle"] = (self.hotkey_toggle_var.get() or "<f1>").strip()
             c["hotkey_stop"]   = (self.hotkey_stop_var.get() or "<f12>").strip()
@@ -1413,11 +1409,13 @@ class MacroApp:
             c["work_max_minutes"] = wmax
             c["rest_min_minutes"] = rmin
             c["rest_max_minutes"] = rmax
+            # 주기는 초로 입력받아 ms 로 저장한다
+            c["scan_interval_ms"] = max(
+                50, sec_to_ms(self.scan_interval_var.get(), 250))
             try:
-                c["scan_interval_ms"] = max(50, int(self.scan_interval_var.get() or "250"))
                 c["scan_radius_px"] = max(0, int(self.scan_radius_var.get() or "0"))
             except ValueError:
-                raise ValueError("스캔 주기/반경: 정수")
+                raise ValueError("스캔 반경: 정수(px)")
             if HUNT_MODE:
                 c["combat_enabled"] = bool(self.combat_var.get())
                 skills = []
