@@ -12,7 +12,7 @@
 
 배포본 구조:
 
-    트릭스터 오토클릭/
+    오토 클릭/
       오토클릭 실행.bat
       app/                ← 업데이트가 통째로 갈아끼우는 곳
         autoclick.py
@@ -43,26 +43,26 @@ CORE_MACRO = CORE_COMMON + [
 
 APPS = {
     "pickup": {
-        "title": "트릭스터 줍기 매크로",
-        "launcher": "줍기 매크로 실행.bat",
+        "title": "줍기 도우미",
+        "launcher": "줍기 도우미 실행.bat",
         "entry": "main.py",
         "args": "--pickup",
         "files": ["main.py", "engine.py"],
         "core": CORE_MACRO,
         "requires": ["pynput>=1.7.6", "opencv-python>=4.8", "mss>=9.0",
                      "numpy>=1.24", "Pillow>=10.0"],
-        "desc": "화면에서 아이템을 찾아 자동으로 줍습니다.",
+        "desc": "화면에서 지정한 이미지를 찾아 자동으로 클릭합니다.",
     },
     "hunt": {
-        "title": "트릭스터 사냥 매크로",
-        "launcher": "사냥 매크로 실행.bat",
+        "title": "사냥 도우미",
+        "launcher": "사냥 도우미 실행.bat",
         "entry": "main.py",
         "args": "--hunt",
         "files": ["main.py", "engine.py"],
         "core": CORE_MACRO,
         "requires": ["pynput>=1.7.6", "opencv-python>=4.8", "mss>=9.0",
                      "numpy>=1.24", "Pillow>=10.0"],
-        "desc": "스킬로 몬스터를 사냥하고 물약을 씁니다.",
+        "desc": "대상을 공격하고 체력이 낮으면 회복 키를 씁니다.",
     },
     "autoclick": {
         "title": "오토 클릭",

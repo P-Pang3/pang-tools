@@ -3,7 +3,7 @@
 경로 해석 — 개발 중일 때와 배포본일 때가 다르다.
 
     개발 중                      배포본
-    trickster_macro/            트릭스터 줍기 매크로/
+    소스폴더/                    줍기 도우미/
       main.py                     app/
       core/                         main.py
       data/        ← 옆            core/
