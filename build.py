@@ -78,25 +78,45 @@ APPS = {
 }
 
 LAUNCHER = """@echo off
-REM {title} (ASCII-only launcher)
+REM Pang Tools - {app_id} (ASCII-only launcher)
 setlocal
 cd /d "%~dp0"
 
-REM Some games run elevated and Windows blocks input from lower-privilege
-REM processes (UIPI). Symptom: the cursor moves but clicks do nothing.
-REM Re-launch as administrator so input reaches those windows.
-net session >nul 2>&1
-if not errorlevel 1 goto :have_admin
-echo Requesting administrator privileges...
-powershell -NoProfile -Command "Start-Process -Verb RunAs -FilePath '%~f0'" >nul 2>&1
-exit /b
+REM -----------------------------------------------------------
+REM 1) Python check. This must run BEFORE the admin elevation:
+REM    a per-user install done from an elevated shell lands in the
+REM    administrator's profile, where the normal account cannot see it.
+REM -----------------------------------------------------------
+REM Ask Python to run something trivial. This is the only reliable test:
+REM "where python" can list several paths (a real install plus the Windows
+REM Store alias), and only the first one actually runs.
+python -c "import sys; sys.exit(0)" >nul 2>&1
+if not errorlevel 1 goto :have_python
 
-:have_admin
+REM Python did not run. Work out why so the message is useful.
 where python >nul 2>&1
-if errorlevel 1 goto :no_python
+if errorlevel 1 goto :get_python
+for /f "delims=" %%p in ('where python 2^>nul') do (
+    echo %%p | findstr /i "WindowsApps" >nul && goto :store_stub
+    goto :get_python
+)
+goto :get_python
 
+:have_python
 python -c "import pynput" >nul 2>&1
-if errorlevel 1 goto :install
+if errorlevel 1 goto :install_deps
+
+REM -----------------------------------------------------------
+REM 2) Elevate. Some games run elevated and Windows blocks input from
+REM    lower-privilege processes (cursor moves but clicks do nothing).
+REM    Cancelling is fine - we just carry on without it.
+REM -----------------------------------------------------------
+net session >nul 2>&1
+if not errorlevel 1 goto :run
+if "%ELEVATED%"=="1" goto :run
+set "ELEVATED=1"
+powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs" >nul 2>&1
+if not errorlevel 1 exit /b 0
 
 :run
 where pythonw >nul 2>&1
@@ -107,27 +127,82 @@ goto :eof
 start "" python "app\\{entry}" {args}
 goto :eof
 
-:install
+REM -----------------------------------------------------------
+REM Dependencies
+REM -----------------------------------------------------------
+:install_deps
 echo.
 echo   Installing required packages. This runs only once.
 echo.
 python -m pip install --upgrade pip
 python -m pip install -r "app\\requirements.txt"
 if errorlevel 1 goto :install_fail
-goto :run
+goto :have_python
 
-:no_python
+REM -----------------------------------------------------------
+REM Python auto-install
+REM -----------------------------------------------------------
+:get_python
+if exist "%TEMP%\\pangtools_py.tmp" goto :python_manual
+
 echo.
-echo   Python is not installed.
-echo   Get it from https://www.python.org/downloads/
-echo   IMPORTANT: check "Add python.exe to PATH" during setup.
+echo   Python was not found. Installing it automatically.
+echo   About 25 MB will be downloaded. This runs only once.
+echo.
+
+curl --version >nul 2>&1
+if errorlevel 1 goto :python_manual
+
+echo   Downloading Python 3.12.9 ...
+curl -L --progress-bar -o "%TEMP%\\python_setup.exe" "https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe"
+if errorlevel 1 goto :python_manual
+
+echo.
+echo   Installing (no administrator rights needed) ...
+"%TEMP%\\python_setup.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_launcher=0
+if errorlevel 1 goto :python_manual
+
+del "%TEMP%\\python_setup.exe" >nul 2>&1
+echo 1 > "%TEMP%\\pangtools_py.tmp"
+
+echo.
+echo   Done. Restarting ...
+echo.
+start "" "%~f0"
+exit /b 0
+
+:store_stub
+echo.
+echo   Windows is redirecting "python" to the Microsoft Store.
+echo.
+echo   Fix it like this:
+echo     Settings ^> Apps ^> Advanced app settings
+echo       ^> App execution aliases
+echo     Turn OFF "python.exe" and "python3.exe".
+echo.
+echo   Then run this file again.
+echo.
+pause
+goto :eof
+
+:python_manual
+del "%TEMP%\\pangtools_py.tmp" >nul 2>&1
+echo.
+echo   Could not install Python automatically.
+echo.
+echo   Please install it yourself:
+echo     https://www.python.org/downloads/
+echo.
+echo   IMPORTANT: tick "Add python.exe to PATH" during setup,
+echo   then run this file again.
 echo.
 pause
 goto :eof
 
 :install_fail
 echo.
-echo   Package install failed. Check your internet connection.
+echo   Package install failed. Check your internet connection
+echo   and run this file again.
 echo.
 pause
 goto :eof
@@ -139,11 +214,14 @@ README = """{title}
 {desc}
 
 ■ 실행 방법
-   "{launcher}" 를 두 번 누르세요.
-   처음 한 번은 필요한 것들을 자동으로 설치합니다 (인터넷 필요).
+   "{launcher}" 를 두 번 누르면 끝입니다.
 
-   Python 이 없다면 https://www.python.org/downloads/ 에서 받아 설치하세요.
-   설치할 때 "Add python.exe to PATH" 를 반드시 체크해야 합니다.
+   처음 한 번은 준비 작업을 합니다 (인터넷 연결 필요).
+   Python 이 없으면 자동으로 받아서 설치하고 (약 25MB),
+   필요한 패키지도 알아서 깔린 뒤 프로그램이 뜹니다.
+   설치가 끝나면 창이 한 번 다시 열립니다 - 정상입니다.
+
+   검은 창이 잠깐 보였다 사라지는 것도 정상입니다.
 
 ■ 폴더 설명
    app\\     프로그램 코드입니다. 직접 고치지 마세요.
@@ -189,7 +267,7 @@ def copy_app(app_id: str, spec: dict, version: str, owner: str, repo: str,
 
     # 런처는 cmd 가 읽으므로 ASCII 로만
     (prog / spec["launcher"]).write_text(
-        LAUNCHER.format(title=spec["title"], entry=spec["entry"],
+        LAUNCHER.format(app_id=app_id, entry=spec["entry"],
                         args=spec["args"]),
         encoding="ascii", errors="ignore")
 
