@@ -113,6 +113,8 @@ DEFAULT_CONFIG = {
     "coarse_scale": 0.5,          # 1차 스캔 축소 비율
     "coarse_margin": 0.22,        # 축소본에서 후보를 넓게 잡는 여유
     "fast_reject": True,          # 색이 없으면 매칭 자체를 건너뜀
+    # 몬스터가 반대편을 보면 그림이 달라진다. 좌우 반전본을 같이 찾는다.
+    "template_mirror": False,
     "max_detections": 12,         # 한 프레임에서 취할 최대 검출 수
     "scan_radius_px": 0,          # 0이면 창 전체, 양수면 중심 반경만
     "scan_center_dx": 0,
@@ -142,6 +144,15 @@ DEFAULT_CONFIG = {
     # 비우면 평타(클릭만). 쿨다운이 지난 것부터 순환해서 쓴다.
     "attack_skills": [],            # [{"key": "q", "cooldown": 3.0}, ...]
     "skill_click_gap_ms": 90,       # 스킬키 누른 뒤 클릭까지
+    # 움직이는 대상은 스캔 시점과 클릭 시점의 자리가 다르다.
+    # 클릭 직전에 다시 조준해야 빈 땅을 누르지 않는다.
+    "retarget_before_click": True,
+    "retarget_tolerance_px": 10,
+    # 버프 — 지속 시간이 끝나기 전에 다시 건다
+    "buff_enabled": False,
+    "buff_skills": [],              # [{"key": "f1", "duration": 300}, ...]
+    "buff_margin_sec": 5,           # 끝나기 몇 초 전에 미리 걸까
+    "buff_gap_ms": 400,             # 버프 쓰고 다음 행동까지
     "attack_timeout_sec": 12,       # 이 시간 안에 못 잡으면 대상 교체
     "engage_block_sec": 15,         # 포기한 대상을 다시 안 보는 시간
     # HP/MP 바 — 설정 탭에서 영역을 지정하면 채워진다
@@ -1048,6 +1059,16 @@ class MacroApp:
                  fg=COLOR_SUBTEXT).pack(side="left")
 
         row = tk.Frame(card, bg=COLOR_CARD)
+        row.pack(fill="x", padx=14, pady=2)
+        self.mirror_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            row, text="좌우 반전한 모습도 함께 찾기",
+            variable=self.mirror_var).pack(side="left")
+        tk.Label(row, text="   (대상이 반대편을 볼 때. 스캔이 조금 느려집니다)",
+                 font=("맑은 고딕", 9), bg=COLOR_CARD,
+                 fg=COLOR_SUBTEXT).pack(side="left")
+
+        row = tk.Frame(card, bg=COLOR_CARD)
         row.pack(fill="x", padx=14, pady=(2, 10))
         tk.Label(row, text="스캔 반경:",
                  font=("맑은 고딕", 10), bg=COLOR_CARD).pack(side="left")
@@ -1147,6 +1168,35 @@ class MacroApp:
                          font=("맑은 고딕", 9), bg=COLOR_CARD,
                          fg=COLOR_SUBTEXT).pack(side="left")
                 self.skill_vars.append((kv, cv))
+
+            # 버프 — 지속 시간이 끝나면 다시 걸어야 한다
+            self.buff_on_var = tk.BooleanVar(value=False)
+            brow = tk.Frame(card, bg=COLOR_CARD)
+            brow.pack(fill="x", padx=14, pady=(10, 2))
+            ttk.Checkbutton(brow, text="버프 자동 유지",
+                            variable=self.buff_on_var).pack(side="left")
+            tk.Label(brow, text="   지속 시간이 끝나기 전에 다시 걸어줍니다",
+                     font=("맑은 고딕", 9), bg=COLOR_CARD,
+                     fg=COLOR_SUBTEXT).pack(side="left")
+            self.buff_vars = []
+            for i in range(3):
+                brow = tk.Frame(card, bg=COLOR_CARD)
+                brow.pack(fill="x", padx=14, pady=1)
+                tk.Label(brow, text=f"  {i+1}.  키",
+                         font=("맑은 고딕", 10), bg=COLOR_CARD,
+                         width=6, anchor="w").pack(side="left")
+                kv = tk.StringVar(value="")
+                KeyCaptureEntry(brow, kv, mode="plain",
+                                width=8, bg=COLOR_CARD).pack(side="left", padx=4)
+                tk.Label(brow, text="  지속",
+                         font=("맑은 고딕", 10), bg=COLOR_CARD).pack(side="left")
+                dv = tk.StringVar(value="0")
+                ttk.Entry(brow, textvariable=dv, width=6,
+                          justify="right").pack(side="left", padx=4)
+                tk.Label(brow, text="초",
+                         font=("맑은 고딕", 9), bg=COLOR_CARD,
+                         fg=COLOR_SUBTEXT).pack(side="left")
+                self.buff_vars.append((kv, dv))
 
             row = tk.Frame(card, bg=COLOR_CARD)
             row.pack(fill="x", padx=14, pady=(8, 4))
@@ -1343,6 +1393,7 @@ class MacroApp:
         self.rest_max_var.set(str(c.get("rest_max_minutes", 12)))
         self.scan_interval_var.set(sec_text(c.get("scan_interval_ms", 250)))
         self.scan_radius_var.set(str(c.get("scan_radius_px", 0)))
+        self.mirror_var.set(bool(c.get("template_mirror", False)))
         # 사냥 설정은 사냥 프로그램에만 위젯이 있다.
         # 안전 설정은 두 프로그램 공통이므로 이 블록 밖에 둔다.
         if HUNT_MODE:
@@ -1355,6 +1406,15 @@ class MacroApp:
                 else:
                     kv.set("")
                     cv.set("0")
+            self.buff_on_var.set(bool(c.get("buff_enabled", False)))
+            buffs = c.get("buff_skills") or []
+            for i, (kv, dv) in enumerate(self.buff_vars):
+                if i < len(buffs) and isinstance(buffs[i], dict):
+                    kv.set(str(buffs[i].get("key", "")))
+                    dv.set(str(buffs[i].get("duration", 0)))
+                else:
+                    kv.set("")
+                    dv.set("0")
             self.hp_key_var.set(str(c.get("hp_potion_key", "1")))
             self.hp_pct_var.set(str(c.get("hp_potion_percent", 50)))
             self.mp_key_var.set(str(c.get("mp_potion_key", "")))
@@ -1412,6 +1472,7 @@ class MacroApp:
             # 주기는 초로 입력받아 ms 로 저장한다
             c["scan_interval_ms"] = max(
                 50, sec_to_ms(self.scan_interval_var.get(), 250))
+            c["template_mirror"] = bool(self.mirror_var.get())
             try:
                 c["scan_radius_px"] = max(0, int(self.scan_radius_var.get() or "0"))
             except ValueError:
@@ -1429,6 +1490,19 @@ class MacroApp:
                         cd = 0.0
                     skills.append({"key": k, "cooldown": cd})
                 c["attack_skills"] = skills
+                c["buff_enabled"] = bool(self.buff_on_var.get())
+                buffs = []
+                for kv, dv in self.buff_vars:
+                    k = kv.get().strip()
+                    if not k:
+                        continue
+                    try:
+                        dur = max(0.0, float(dv.get() or "0"))
+                    except ValueError:
+                        dur = 0.0
+                    if dur > 0:
+                        buffs.append({"key": k, "duration": dur})
+                c["buff_skills"] = buffs
                 c["hp_potion_key"] = self.hp_key_var.get().strip()
                 c["mp_potion_key"] = self.mp_key_var.get().strip()
                 try:

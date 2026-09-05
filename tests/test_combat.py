@@ -4,7 +4,7 @@
 우선순위(생존 > 전투 > 줍기)는 협상 대상이 아니다. HP 가 바닥인데
 아이템을 주우러 가면 죽는다. 여기서 그게 실제로 지켜지는지 본다.
 """
-import sys, os
+import sys, os, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
@@ -206,6 +206,58 @@ tr.update(snap)
 a = pol.decide(snap, tr, (0, 0))
 check("스킬 미설정 -> 평타", a.kind == ATTACK and a.skill is None,
       f"skill={a.skill}")
+
+print("\n" + "=" * 62)
+print(f"전체: {sum(results)}/{len(results)} PASS")
+
+
+# ==================================================================
+print("\n5) 버프 자동 유지")
+# ==================================================================
+from core.combat import BUFF
+
+CFG["attack_skills"] = []
+CFG["buff_enabled"] = True
+CFG["buff_skills"] = [{"key": "f1", "duration": 300},
+                      {"key": "f2", "duration": 600}]
+CFG["buff_margin_sec"] = 5
+
+pol.reset()
+snap, tr = scene(hp=0.9, monsters=1)
+a = pol.decide(snap, tr, (0, 0))
+check("시작하면 먼저 버프를 건다", a.kind == BUFF and a.key == "f1",
+      f"{a.kind} {a.key}")
+pol.note_buff("f1")
+
+a = pol.decide(snap, tr, (0, 0))
+check("두 번째 버프도 건다", a.kind == BUFF and a.key == "f2", f"{a.key}")
+pol.note_buff("f2")
+
+tr.update(snap)
+a = pol.decide(snap, tr, (0, 0))
+check("버프가 다 걸리면 전투로", a.kind == ATTACK, f"{a.kind}")
+
+# 지속 시간이 지나면 다시
+pol._last_buff["f1"] = time.monotonic() - 296   # 300 - margin 5 = 295 경과
+tr.update(snap)
+a = pol.decide(snap, tr, (0, 0))
+check("지속 시간 끝나기 전에 다시 건다", a.kind == BUFF and a.key == "f1",
+      f"{a.kind} {a.key}")
+
+# 생존이 버프보다 우선
+pol.reset()
+snap, tr = scene(hp=0.3, monsters=1)
+a = pol.decide(snap, tr, (0, 0))
+check("HP 낮으면 버프보다 물약이 먼저", a.kind == HEAL_HP, f"{a.kind}")
+
+# 버프를 끄면 무시
+pol.reset()
+CFG["buff_enabled"] = False
+snap, tr = scene(hp=0.9, monsters=1)
+a = pol.decide(snap, tr, (0, 0))
+check("버프 끄면 바로 전투", a.kind == ATTACK, f"{a.kind}")
+CFG["buff_enabled"] = False
+CFG["buff_skills"] = []
 
 print("\n" + "=" * 62)
 print(f"전체: {sum(results)}/{len(results)} PASS")

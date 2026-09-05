@@ -138,6 +138,7 @@ class ScreenBackend(PerceptionBackend):
             self._templates = []
             return
         coarse = float(self._c("coarse_scale", 0.5))
+        mirror = bool(self._c("template_mirror", False))
         loaded = []
         for sp in specs:
             if isinstance(sp, dict):
@@ -156,12 +157,20 @@ class ScreenBackend(PerceptionBackend):
             thr = max(0.30, min(1.0, float(sp.threshold)))
             try:
                 loaded.append(_Template(sp.name, sp.kind, thr, img, coarse))
+                # 좌우 반전본 — 몬스터가 반대편을 볼 때를 덮는다.
+                # 이름은 같게 두어 로그와 추적에서 한 대상으로 보이게 한다.
+                if mirror:
+                    flipped = _cv2.flip(img, 1)
+                    loaded.append(
+                        _Template(sp.name, sp.kind, thr, flipped, coarse))
             except Exception as e:
                 self._log(f"⚠  템플릿 준비 실패 [{sp.name}]: {e}")
         self._templates = loaded
         if loaded:
             small_off = [t.name for t in loaded if not t.usable_small]
-            msg = f"📌  템플릿 {len(loaded)}개 로드"
+            n_src = len(loaded) // 2 if mirror else len(loaded)
+            msg = (f"📌  템플릿 {n_src}개 로드"
+                   + (f" (좌우 반전 포함 {len(loaded)}개로 탐색)" if mirror else ""))
             if small_off:
                 msg += f" (작아서 정밀 매칭만: {', '.join(small_off)})"
             self._log(msg)

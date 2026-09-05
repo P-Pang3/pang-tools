@@ -20,6 +20,7 @@ HEAL_HP = "heal_hp"
 HEAL_MP = "heal_mp"
 ATTACK = "attack"
 PICKUP = "pickup"
+BUFF = "buff"
 HALT = "halt"          # 위험해서 스스로 멈춤
 
 
@@ -56,11 +57,15 @@ class CombatPolicy:
         self._last_hp_warn = 0.0
         self._last_skill = {}         # 스킬 키 -> 마지막 사용 시각
         self._skill_turn = 0          # 순환 위치
+        self._last_buff = {}          # 버프 키 -> 마지막 사용 시각
+        self._buffed_once = set()     # 시작 후 한 번은 걸었는가
 
     def reset(self):
         self._last_heal.clear()
         self._last_skill.clear()
         self._skill_turn = 0
+        self._last_buff.clear()
+        self._buffed_once.clear()
         self._engaged_id = None
         self._engaged_since = 0.0
         self._low_hp_since = 0.0
@@ -91,13 +96,19 @@ class CombatPolicy:
             if act is not None:
                 return act
 
-        # ── 2. 전투 ──────────────────────────────────────────────
+        # ── 2. 버프 ──────────────────────────────────────────────
+        # 끊긴 채로 계속 싸우면 결국 죽는다. 전투보다 먼저 챙긴다.
+        act = self._buff()
+        if act is not None:
+            return act
+
+        # ── 3. 전투 ──────────────────────────────────────────────
         if hunting:
             act = self._combat(snapshot, tracker, cursor)
             if act is not None:
                 return act
 
-        # ── 3. 줍기 ──────────────────────────────────────────────
+        # ── 4. 줍기 ──────────────────────────────────────────────
         item = self._pick_target(tracker, cursor, kind="item")
         if item is not None:
             return Action(PICKUP, target=item)
@@ -147,6 +158,42 @@ class CombatPolicy:
 
     def note_heal(self, key):
         self._last_heal[key] = time.monotonic()
+
+    # ------------------------------------------------------------------
+    def buffs(self):
+        """[(key, 유지시간초), ...]. 유지시간이 0 이하면 무시한다."""
+        raw = self._c("buff_skills", []) or []
+        out = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            k = str(item.get("key", "")).strip()
+            dur = float(item.get("duration", 0) or 0)
+            if k and dur > 0:
+                out.append((k, dur))
+        return out
+
+    def _buff(self):
+        """다시 걸어야 할 버프가 있으면 그 행동을 돌려준다."""
+        if not self._c("buff_enabled", False):
+            return None
+        now = time.monotonic()
+        margin = self._cf("buff_margin_sec", 5.0)
+        for key, dur in self.buffs():
+            last = self._last_buff.get(key)
+            if last is None:
+                # 시작하고 아직 한 번도 안 걸었다
+                return Action(BUFF, key=key, reason="시작 버프")
+            # 지속 시간이 끝나기 조금 전에 미리 건다.
+            # 정확히 끝나는 순간을 노리면 그 틈에 버프가 빠진다.
+            if (now - last) >= max(1.0, dur - margin):
+                return Action(BUFF, key=key,
+                              reason=f"{dur:.0f}초 경과 — 재사용")
+        return None
+
+    def note_buff(self, key):
+        if key:
+            self._last_buff[key] = time.monotonic()
 
     # ------------------------------------------------------------------
     def skills(self):

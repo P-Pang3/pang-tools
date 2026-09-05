@@ -22,7 +22,7 @@ import threading
 import time
 
 from .actuation import HumanInput
-from .combat import (CombatPolicy, ATTACK, HALT, HEAL_HP, HEAL_MP,
+from .combat import (CombatPolicy, ATTACK, BUFF, HALT, HEAL_HP, HEAL_MP,
                      IDLE, PICKUP)
 from .geometry import (dpi_warning, raise_timer_resolution,
                        restore_timer_resolution)
@@ -301,6 +301,14 @@ class Pipeline:
             self.stop()
             return None
 
+        # ── 버프 ──
+        if action.kind == BUFF:
+            self._log(f"✨  버프 '{action.key.upper()}' — {action.reason}")
+            if not self.hands.press_key(action.key, self._stop_event):
+                self.policy.note_buff(action.key)
+                self.stats.note_key()
+            return self._cf("buff_gap_ms", 400)
+
         # ── 회복 ──
         if action.kind in (HEAL_HP, HEAL_MP):
             what = "HP" if action.kind == HEAL_HP else "MP"
@@ -330,8 +338,13 @@ class Pipeline:
         if self.hands.hesitate(self._stop_event):
             return None
 
-        # 스킬 공격은 '스킬키 -> 대상 클릭' 순서다. 클릭부터 하면
-        # 스킬이 아니라 평타가 나가거나 대상만 선택되고 만다.
+        # 1) 큰 이동을 먼저 한다. 스킬키보다 앞에 두면 이동 시간과
+        #    스킬 대기(gap)가 겹치지 않아 그만큼 지연이 줄어든다.
+        if self.hands.move_to(t.x, t.y, max(t.w, t.h), self._stop_event):
+            return None
+
+        # 2) 스킬 공격은 '스킬키 -> 대상 클릭' 순서다. 클릭부터 하면
+        #    스킬이 아니라 평타가 나가거나 대상만 선택되고 만다.
         if action.kind == ATTACK and action.skill:
             if self.hands.press_key(action.skill, self._stop_event):
                 return None
@@ -341,8 +354,12 @@ class Pipeline:
             if gap > 0 and self.hands.sleep_ms(gap, self._stop_event):
                 return None
 
-        if self.hands.move_to(t.x, t.y, max(t.w, t.h), self._stop_event):
+        # 3) 클릭 직전에 다시 조준한다.
+        #    Track 은 지각 스레드가 계속 갱신하므로 t.x/t.y 는 최신값이다.
+        #    움직이는 대상은 여기서 잡아야 빈 땅을 누르지 않는다.
+        if self._retarget(t):
             return None
+
         if self.hands.micro_drift(self._stop_event):
             return None
         pre = self._cf("pre_move_delay_ms", 20)
@@ -357,6 +374,24 @@ class Pipeline:
         if action.kind == ATTACK:
             return self._cf("attack_interval_ms", 1500)
         return None
+
+    def _retarget(self, track) -> bool:
+        """대상이 움직였으면 커서를 다시 맞춘다. 정지 요청이면 True.
+
+        보정은 짧고 곧게 간다 — 여기서 또 곡선을 그리며 시간을 쓰면
+        그 사이에 대상이 다시 움직인다.
+        """
+        if not self._c("retarget_before_click", True):
+            return False
+        cx, cy = self.hands.cursor()
+        dx, dy = track.x - cx, track.y - cy
+        drift = (dx * dx + dy * dy) ** 0.5
+        tol = max(4.0, self._cf("retarget_tolerance_px", 10))
+        if drift <= tol:
+            return False
+        self._log(f"  \u21b3 대상이 {drift:.0f}px 움직여 다시 조준")
+        return self.hands.move_to(track.x, track.y,
+                                  max(track.w, track.h), self._stop_event)
 
     def _log_miss(self, miss):
         now = time.monotonic()
