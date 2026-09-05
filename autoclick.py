@@ -21,7 +21,7 @@ from core import geometry, paths
 from core.actuation import HumanInput
 from core.keycapture import KeyCaptureEntry, pretty as key_pretty
 from core.updateui import UpdateBar, version_text
-from core.window import GameWindow
+from core.window import GameWindow, foreground_title, window_at
 
 geometry.declare_dpi_aware()
 
@@ -60,6 +60,9 @@ DEFAULT_CONFIG = {
     "fixed_x": 0,
     "fixed_y": 0,
     "limit_count": 0,             # 0 = 무제한
+    # 누르고 있는 시간. 게임이 프레임 단위로 입력을 읽으면 너무 짧으면 놓친다.
+    "click_hold_ms": 60,
+    "start_delay_sec": 3,         # 시작 누르고 대상 창으로 돌아갈 시간
     "hotkey_toggle": "<home>",
     "hotkey_stop": "<f12>",
     "failsafe_corner": True,
@@ -136,6 +139,10 @@ class ClickEngine:
         if cfg.get("failsafe_corner", True):
             self._log("🛟  커서를 화면 왼쪽 위 모서리로 보내면 즉시 정지합니다")
 
+        delay = max(0, int(cfg.get("start_delay_sec", 0) or 0))
+        if delay:
+            self._log(f"{delay}초 뒤 시작합니다 — 그동안 대상 창을 눌러 두세요")
+
         self.window.set_filter(cfg.get("window_title", "")
                                if cfg.get("window_lock") else "")
         if self._on_state:
@@ -160,6 +167,10 @@ class ClickEngine:
 
     # ---------------------------------------------------------------
     def _run(self):
+        # 시작 직후에는 이 프로그램 창이 활성이다. 대상 창으로 돌아갈 틈을 준다.
+        delay = max(0, int(self._c("start_delay_sec", 0) or 0))
+        if delay and self._stop.wait(delay):
+            return
         next_at = time.monotonic()
         while self._running and not self._stop.is_set():
             now = time.monotonic()
@@ -219,8 +230,9 @@ class ClickEngine:
 
         if self._c("do_click", True):
             btn = _BUTTONS.get(self._c("click_button", "left"), Button.left)
+            hold = max(5.0, float(self._c("click_hold_ms", 60))) / 1000.0
             self.hands.mouse.press(btn)
-            time.sleep(0.03)
+            time.sleep(hold)
             self.hands.mouse.release(btn)
 
         if self._c("do_key", False):
@@ -229,8 +241,27 @@ class ClickEngine:
                 self.hands.press_key(key, self._stop)
 
         self.count += 1
+        if self.count == 1:
+            self._report_target()
         if self._on_count:
             self._on_count(self.count)
+
+    def _report_target(self):
+        """첫 입력이 어디로 갔는지 한 번 알린다.
+
+        "클릭은 되는데 게임이 반응 없다" 는 말은 두 가지를 뜻할 수 있다.
+        엉뚱한 창을 누르고 있거나, 정말로 게임이 무시하거나. 그걸 가른다.
+        """
+        try:
+            x, y = self.hands.cursor()
+            under = window_at(x, y) or "(알 수 없음)"
+            active = foreground_title() or "(없음)"
+            self._log(f"첫 입력 → ({x}, {y}) · 그 자리의 창 [{under}]")
+            if active != under:
+                self._log(f"⚠  활성 창은 [{active}] 입니다. "
+                          f"입력은 활성 창이 받습니다 — 대상 창을 눌러 활성으로 두세요")
+        except Exception:
+            pass
 
 
 # ===================================================================
@@ -250,9 +281,9 @@ class AutoClickApp:
     def __init__(self, root):
         self.root = root
         root.title("오토 클릭")
-        # 내용이 다 들어가는 높이 — 저장 버튼이 잘리면 안 된다
+        # 스크롤과 하단 고정이 있으므로 작게 줄여도 저장 버튼은 남는다
         root.geometry("560x720")
-        root.minsize(520, 700)
+        root.minsize(460, 320)
         root.configure(bg=COLOR_BG)
 
         self.cfg = self._load()
@@ -291,6 +322,7 @@ class AutoClickApp:
 
     # ---------------- UI ----------------
     def _card(self, parent, title, desc=""):
+        # parent 는 스크롤 영역(body)이다. self.root 에 붙이면 스크롤 밖에 남는다.
         outer = tk.Frame(parent, bg=COLOR_BG)
         outer.pack(fill="x", padx=16, pady=(12, 0))
         head = tk.Frame(outer, bg=COLOR_BG)
@@ -337,8 +369,46 @@ class AutoClickApp:
             bg=COLOR_OFF, fg="#E0E0E0")
         self.hint_label.pack(side="right", padx=18)
 
+        # ── 하단 고정 ──
+        # 창을 줄여도 저장 버튼은 남아야 한다. 먼저 pack 해서 자리를 잡는다.
+        bottom = tk.Frame(self.root, bg=COLOR_BG)
+        bottom.pack(side="bottom", fill="x", padx=16, pady=(6, 8))
+        HoverButton(bottom, bg="#1565C0", hover_bg="#0D47A1",
+                    text="💾  설정 저장", font=("맑은 고딕", 10, "bold"),
+                    padx=18, pady=6, command=self._save_from_ui).pack(
+            side="left")
+        self.log_label = tk.Label(
+            bottom, text="", font=("맑은 고딕", 9), bg=COLOR_BG,
+            fg=COLOR_SUBTEXT, anchor="w", justify="left")
+        self.log_label.pack(side="left", padx=12, fill="x", expand=True)
+
+        # ── 스크롤 영역 ──
+        # 창이 작아지면 설정이 잘린다. 잘린 곳에 닿을 수 있어야 한다.
+        wrap = tk.Frame(self.root, bg=COLOR_BG)
+        wrap.pack(fill="both", expand=True)
+        canvas = tk.Canvas(wrap, bg=COLOR_BG, highlightthickness=0)
+        vsb = ttk.Scrollbar(wrap, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        body = tk.Frame(canvas, bg=COLOR_BG)
+        win = canvas.create_window((0, 0), window=body, anchor="nw")
+        body.bind("<Configure>", lambda e: canvas.configure(
+            scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>",
+                    lambda e: canvas.itemconfig(win, width=e.width))
+
+        def _wheel(e):
+            # 스크롤할 것이 없으면 가만히 둔다 (창이 충분히 크면 안 움직인다)
+            r = canvas.bbox("all")
+            if r and r[3] > canvas.winfo_height():
+                canvas.yview_scroll(-1 if e.delta > 0 else 1, "units")
+        canvas.bind_all("<MouseWheel>", _wheel)
+        self._scroll_canvas = canvas
+
         # 시작 버튼 + 카운터
-        top = tk.Frame(self.root, bg=COLOR_BG)
+        top = tk.Frame(body, bg=COLOR_BG)
         top.pack(fill="x", padx=16, pady=(14, 0))
         self.toggle_btn = HoverButton(
             top, bg=COLOR_OK, hover_bg="#2E7D32", text="▶   시작",
@@ -355,7 +425,7 @@ class AutoClickApp:
         self.elapsed_label.pack(side="right", padx=8)
 
         # ── 간격 ──
-        card = self._card(self.root, "⏱  간격")
+        card = self._card(body, "⏱  간격")
         row = tk.Frame(card, bg=COLOR_CARD)
         row.pack(fill="x", padx=14, pady=(10, 4))
         tk.Label(row, text="입력 간격:", font=("맑은 고딕", 10),
@@ -383,8 +453,30 @@ class AutoClickApp:
                  font=("맑은 고딕", 9), bg=COLOR_CARD,
                  fg=COLOR_SUBTEXT).pack(side="left")
 
+        row = tk.Frame(card, bg=COLOR_CARD)
+        row.pack(fill="x", padx=14, pady=(2, 4))
+        tk.Label(row, text="누르는 시간:", font=("맑은 고딕", 10),
+                 bg=COLOR_CARD).pack(side="left")
+        self.hold_var = tk.StringVar()
+        ttk.Entry(row, textvariable=self.hold_var, width=6,
+                  justify="right").pack(side="left", padx=6)
+        tk.Label(row, text="ms   (게임이 반응 없으면 80~120 으로 늘려보세요)",
+                 font=("맑은 고딕", 9), bg=COLOR_CARD,
+                 fg=COLOR_SUBTEXT).pack(side="left")
+
+        row = tk.Frame(card, bg=COLOR_CARD)
+        row.pack(fill="x", padx=14, pady=(2, 10))
+        tk.Label(row, text="시작 지연:", font=("맑은 고딕", 10),
+                 bg=COLOR_CARD).pack(side="left")
+        self.delay_var = tk.StringVar()
+        ttk.Entry(row, textvariable=self.delay_var, width=6,
+                  justify="right").pack(side="left", padx=6)
+        tk.Label(row, text="초   (그 사이에 게임 창을 눌러 두세요)",
+                 font=("맑은 고딕", 9), bg=COLOR_CARD,
+                 fg=COLOR_SUBTEXT).pack(side="left")
+
         # ── 무엇을 누를까 ──
-        card = self._card(self.root, "🖱  동작", "둘 다 켜면 함께 나갑니다.")
+        card = self._card(body, "🖱  동작", "둘 다 켜면 함께 나갑니다.")
         row = tk.Frame(card, bg=COLOR_CARD)
         row.pack(fill="x", padx=14, pady=(10, 4))
         self.click_var = tk.BooleanVar()
@@ -409,7 +501,7 @@ class AutoClickApp:
                  fg=COLOR_SUBTEXT).pack(side="left")
 
         # ── 위치 ──
-        card = self._card(self.root, "📍  클릭 위치")
+        card = self._card(body, "📍  클릭 위치")
         row = tk.Frame(card, bg=COLOR_CARD)
         row.pack(fill="x", padx=14, pady=(10, 4))
         self.pos_var = tk.StringVar()
@@ -436,7 +528,7 @@ class AutoClickApp:
                  fg=COLOR_SUBTEXT).pack(side="left")
 
         # ── 단축키 · 안전 ──
-        card = self._card(self.root, "⌨  단축키와 안전")
+        card = self._card(body, "⌨  단축키와 안전")
         row = tk.Frame(card, bg=COLOR_CARD)
         row.pack(fill="x", padx=14, pady=(10, 4))
         tk.Label(row, text="시작/정지:", font=("맑은 고딕", 10),
@@ -465,23 +557,14 @@ class AutoClickApp:
         ttk.Entry(row, textvariable=self.wtitle_var, width=20).pack(
             side="left", padx=6)
 
-        # 저장 + 로그
-        bottom = tk.Frame(self.root, bg=COLOR_BG)
-        bottom.pack(fill="x", padx=16, pady=(12, 6))
-        HoverButton(bottom, bg="#1565C0", hover_bg="#0D47A1",
-                    text="💾  설정 저장", font=("맑은 고딕", 10, "bold"),
-                    padx=18, pady=6, command=self._save_from_ui).pack(
-            side="left")
-        self.log_label = tk.Label(
-            bottom, text="", font=("맑은 고딕", 9), bg=COLOR_BG,
-            fg=COLOR_SUBTEXT, anchor="w", justify="left")
-        self.log_label.pack(side="left", padx=12, fill="x", expand=True)
 
     # ---------------- 설정 <-> UI ----------------
     def _sync_to_ui(self):
         c = self.cfg
         self.interval_var.set(str(c.get("interval_ms", 1000)))
         self.jitter_var.set(str(c.get("jitter_percent", 0)))
+        self.hold_var.set(str(c.get("click_hold_ms", 60)))
+        self.delay_var.set(str(c.get("start_delay_sec", 3)))
         self.click_var.set(bool(c.get("do_click", True)))
         self.button_var.set(c.get("click_button", "left"))
         self.key_on_var.set(bool(c.get("do_key", False)))
@@ -507,6 +590,8 @@ class AutoClickApp:
             c["jitter_percent"] = max(0, min(90,
                                              int(self.jitter_var.get() or "0")))
             c["limit_count"] = max(0, int(self.limit_var.get() or "0"))
+            c["click_hold_ms"] = max(5, int(self.hold_var.get() or "60"))
+            c["start_delay_sec"] = max(0, int(self.delay_var.get() or "0"))
         except ValueError as e:
             messagebox.showerror("입력 오류", str(e))
             return False

@@ -14,15 +14,26 @@ if "%MODE%"=="" set "MODE=--pickup"
 REM -----------------------------------------------------------
 REM UAC self-elevation: re-launch as administrator if needed
 REM -----------------------------------------------------------
+REM NOTE: the mode argument MUST be passed through. Without -ArgumentList
+REM the elevated instance starts with no argument and falls back to pickup,
+REM so run_hunt.bat and run_autoclick.bat would both open the pickup app.
 net session >nul 2>&1
-if errorlevel 1 (
-    echo Requesting administrator privileges...
-    powershell -Command "Start-Process -FilePath \"%~f0\" -Verb RunAs"
-    exit /b 0
-)
+if not errorlevel 1 goto :have_admin
+if "%ELEVATED%"=="1" goto :have_admin
+echo Requesting administrator privileges...
+echo (Cancel is fine - it will start without them.)
+set "ELEVATED=1"
+powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList '%MODE%' -Verb RunAs" >nul 2>&1
+if not errorlevel 1 exit /b 0
+echo Continuing without administrator privileges.
 
+:have_admin
+
+set "WHAT=Item Pickup"
+if "%MODE%"=="--hunt" set "WHAT=Hunting"
+if "%MODE%"=="--autoclick" set "WHAT=Auto Clicker"
 echo ============================================================
-echo  Trickster auto-pickup macro
+echo  Starting: %WHAT%
 echo ============================================================
 echo.
 

@@ -82,6 +82,16 @@ REM {title} (ASCII-only launcher)
 setlocal
 cd /d "%~dp0"
 
+REM Some games run elevated and Windows blocks input from lower-privilege
+REM processes (UIPI). Symptom: the cursor moves but clicks do nothing.
+REM Re-launch as administrator so input reaches those windows.
+net session >nul 2>&1
+if not errorlevel 1 goto :have_admin
+echo Requesting administrator privileges...
+powershell -NoProfile -Command "Start-Process -Verb RunAs -FilePath '%~f0'" >nul 2>&1
+exit /b
+
+:have_admin
 where python >nul 2>&1
 if errorlevel 1 goto :no_python
 

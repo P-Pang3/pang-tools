@@ -38,7 +38,10 @@ def phase1():
     app.cfg.update({"failsafe_corner": False, "do_click": True, "do_key": True,
                     "key": "f5", "interval_ms": 60, "jitter_percent": 0,
                     "limit_count": 8, "window_lock": False,
-                    "position_mode": "cursor"})
+                    "position_mode": "cursor",
+                    # 지연은 아래에서 따로 확인한다. 여기서는 즉시 돌아야
+                    # 실행 시간 측정이 의미를 갖는다.
+                    "start_delay_sec": 0, "click_hold_ms": 30})
     globals()["t0"] = time.monotonic()
     app.engine.start()
     root.after(20, wait_done)
@@ -61,7 +64,8 @@ def phase2():
 
     print("\n3) 마우스만 / 키만")
     fired["click"] = fired["key"] = 0
-    app.cfg.update({"do_click": False, "do_key": True, "limit_count": 3})
+    app.cfg.update({"do_click": False, "do_key": True, "limit_count": 3,
+                    "start_delay_sec": 0})
     app.engine.start()
     root.after(500, phase4)
 
@@ -77,6 +81,19 @@ def phase4():
     app.cfg.update({"do_click": False, "do_key": True, "key": ""})
     app.engine.start()
     check("키 켰는데 비었으면 시작 안 함", not app.engine.is_running())
+
+    print("\n5) 시작 지연 (게임으로 돌아갈 시간)")
+    fired["click"] = fired["key"] = 0
+    app.cfg.update({"do_click": True, "do_key": False, "limit_count": 2,
+                    "start_delay_sec": 1, "interval_ms": 30})
+    globals()["t5"] = time.monotonic()
+    app.engine.start()
+    root.after(1600, phase5)
+
+def phase5():
+    el = time.monotonic() - t5
+    check("1초 기다린 뒤 시작", el >= 1.0 and fired["click"] == 2,
+          f"{el:.2f}초 · 클릭 {fired['click']}")
 
     print("\n" + "=" * 56)
     print(f"오토 클릭: {sum(results)}/{len(results)} PASS")

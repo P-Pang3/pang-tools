@@ -262,3 +262,50 @@ class GameWindow:
             return False
         finally:
             _k32.CloseHandle(hp)
+
+
+# ---------------------------------------------------------------
+# 진단 — 지금 이 좌표를 누르면 어느 창이 받는가
+# ---------------------------------------------------------------
+def window_at(x, y) -> str:
+    """화면 좌표 아래에 있는 창의 제목. 못 찾으면 빈 문자열.
+
+    "클릭은 나가는데 게임이 반응하지 않는다" 를 가를 때 쓴다.
+    엉뚱한 창을 누르고 있는지, 정말로 게임이 무시하는지는
+    이걸 봐야 구분된다.
+    """
+    if not _IS_WIN:
+        return ""
+    try:
+        pt = POINT(int(x), int(y))
+        h = _u32.WindowFromPoint(pt)
+        if not h:
+            return ""
+        # 자식 컨트롤이 잡히면 최상위 창으로 올라간다
+        root = _u32.GetAncestor(h, 2) or h      # GA_ROOT
+        n = _u32.GetWindowTextLengthW(root)
+        if n <= 0:
+            return ""
+        buf = ctypes.create_unicode_buffer(n + 1)
+        _u32.GetWindowTextW(root, buf, n + 1)
+        return " ".join(buf.value.split())
+    except Exception:
+        return ""
+
+
+def foreground_title() -> str:
+    """지금 활성 창의 제목. 입력이 실제로 어디로 가는지 알려준다."""
+    if not _IS_WIN:
+        return ""
+    try:
+        h = _u32.GetForegroundWindow()
+        if not h:
+            return ""
+        n = _u32.GetWindowTextLengthW(h)
+        if n <= 0:
+            return ""
+        buf = ctypes.create_unicode_buffer(n + 1)
+        _u32.GetWindowTextW(h, buf, n + 1)
+        return " ".join(buf.value.split())
+    except Exception:
+        return ""
