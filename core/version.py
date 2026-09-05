@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 # 릴리스할 때 올린다. GitHub 태그도 이 값과 맞춘다 (v 접두어는 붙여도 된다).
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 # 업데이트를 받아올 곳. 비워두면 업데이트 기능이 꺼진다.
 GITHUB_OWNER = "P-Pang3"
