@@ -1,0 +1,10 @@
+pynput>=1.7.6
+opencv-python>=4.8
+mss>=9.0
+numpy>=1.24
+Pillow>=10.0
+
+# v4 에서 제거:
+#   pygetwindow — 창 클라이언트 영역을 알려주지 않아 core/window.py 가
+#                 ctypes 로 Win32 API 를 직접 호출한다
+#   pywin32     — 위와 같은 이유로 불필요. 설치도 무겁다
