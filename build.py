@@ -241,13 +241,32 @@ README = """{title}
 """
 
 
+def _wipe(path: Path):
+    """폴더를 비운다. 통째로 못 지우면 안쪽만이라도 치운다.
+
+    윈도우는 탐색기가 미리보기를 잡고 있거나 백신이 훑는 중이면
+    빈 폴더조차 지우지 못한다. 빌드가 그것 때문에 멈출 이유는 없다.
+    """
+    if not path.exists():
+        return
+    try:
+        shutil.rmtree(path)
+        return
+    except OSError:
+        pass
+    for child in sorted(path.rglob("*"), key=lambda p: -len(p.parts)):
+        try:
+            child.unlink() if child.is_file() else child.rmdir()
+        except OSError:
+            pass
+
+
 def copy_app(app_id: str, spec: dict, version: str, owner: str, repo: str,
              out_root: Path) -> Path:
     prog = out_root / spec["title"]
-    if prog.exists():
-        shutil.rmtree(prog)
+    _wipe(prog)
     app = prog / "app"
-    app.mkdir(parents=True)
+    app.mkdir(parents=True, exist_ok=True)
 
     for f in spec["files"]:
         shutil.copy2(ROOT / f, app / f)
