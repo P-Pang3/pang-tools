@@ -54,7 +54,7 @@ DATA_DIR    = paths.data_dir(__file__)
 HUNT_MODE = "--hunt" in sys.argv
 MODE      = "hunt" if HUNT_MODE else "pickup"
 APP_TITLE = ("사냥 도우미" if HUNT_MODE else "줍기 도우미")
-APP_TAG   = ("스킬 공격 · 회복 · 자동 줍기" if HUNT_MODE
+APP_TAG   = ("스킬 공격 · 버프 유지 · 회복" if HUNT_MODE
              else "템플릿 스캔 / 고정 위치 클릭")
 
 CONFIG_FILE = DATA_DIR / f"config_{MODE}.json"
@@ -163,6 +163,10 @@ DEFAULT_CONFIG = {
     "char_travel_max_ms": 4000,     # 아무리 멀어도 이만큼만 기다린다
     "char_offset_x": 0,             # 캐릭터가 화면 중앙이 아니면 보정
     "char_offset_y": 0,
+    # 스킬은 누른다고 바로 나가지 않는다. 시전 동작이 끝나야 발동한다.
+    "skill_cast_ms": 1800,
+    # 사냥 프로그램에서는 줍기를 하지 않는다 (아래에서 모드에 맞춰 덮어씀)
+    "pickup_enabled": True,
     "engage_block_sec": 15,         # 포기한 대상을 다시 안 보는 시간
     # HP/MP 바 — 설정 탭에서 영역을 지정하면 채워진다
     "hp_bar": None,
@@ -195,6 +199,8 @@ DEFAULT_CONFIG = {
 # 사냥 관련 위젯도 만들지 않으므로 이 값이 바뀔 일이 없다.
 if HUNT_MODE:
     DEFAULT_CONFIG["combat_enabled"] = True
+    # 사냥 도우미는 사냥만 한다. 줍기는 줍기 도우미의 몫이다.
+    DEFAULT_CONFIG["pickup_enabled"] = False
 
 
 # -----------------------------------------------------------
@@ -825,14 +831,13 @@ class MacroApp:
             kind_var = tk.StringVar(
                 value="몬스터" if t.get("kind") == "monster"
                 else "아이템")
-            if HUNT_MODE:
-                kc = ttk.Combobox(row, textvariable=kind_var, width=7,
-                                  state="readonly",
-                                  values=("아이템", "몬스터"))
-                kc.pack(side="left", padx=(0, 10))
-            else:
-                # 줍기 프로그램에는 종류가 없다 — 전부 아이템이다
-                kind_var.set("아이템")
+            # 각 프로그램은 한 종류만 다룬다 — 사냥은 몬스터, 줍기는 아이템.
+            # 고르게 하면 엉뚱한 종류를 등록해놓고 왜 안 되는지 묻게 된다.
+            kind_var.set("몬스터" if HUNT_MODE else "아이템")
+            tk.Label(row, text="몬스터" if HUNT_MODE else "아이템",
+                     font=("맑은 고딕", 9), bg=COLOR_CARD,
+                     fg=COLOR_SUBTEXT, width=7, anchor="w").pack(
+                side="left", padx=(0, 10))
 
             thr_var = tk.StringVar(value=str(t.get("threshold", 0.85)))
             ttk.Entry(row, textvariable=thr_var, width=7,
@@ -1034,10 +1039,12 @@ class MacroApp:
         # ─ 주기 ─
         card = self._settings_card(
             inner, "⏱  입력 주기",
-            "클릭과 키 입력 주기. 화면 스캔은 별도 스레드로 돌며 주기도 따로입니다 (스캔 성능 카드).")
+            ("공격 주기. 화면 스캔은 별도 스레드로 돌며 주기도 따로입니다."
+             if HUNT_MODE else
+             "클릭과 키 입력 주기. 화면 스캔은 별도 스레드로 돌며 주기도 따로입니다."))
         row = tk.Frame(card, bg=COLOR_CARD)
         row.pack(fill="x", padx=14, pady=(10, 6))
-        tk.Label(row, text="클릭 주기:",
+        tk.Label(row, text="공격 주기:" if HUNT_MODE else "클릭 주기:",
                  font=("맑은 고딕", 10), bg=COLOR_CARD).pack(side="left")
         self.click_interval_var = tk.StringVar(value="1.2")
         ttk.Entry(row, textvariable=self.click_interval_var,
@@ -1047,7 +1054,8 @@ class MacroApp:
                  fg=COLOR_SUBTEXT).pack(side="left")
 
         row = tk.Frame(card, bg=COLOR_CARD)
-        row.pack(fill="x", padx=14, pady=(0, 6))
+        if not HUNT_MODE:
+            row.pack(fill="x", padx=14, pady=(0, 6))
         tk.Label(row, text="키 입력 주기:",
                  font=("맑은 고딕", 10), bg=COLOR_CARD).pack(side="left")
         self.key_interval_var = tk.StringVar(value="0.2")
@@ -1058,7 +1066,8 @@ class MacroApp:
                  fg=COLOR_SUBTEXT).pack(side="left")
 
         row = tk.Frame(card, bg=COLOR_CARD)
-        row.pack(fill="x", padx=14, pady=(0, 10))
+        if not HUNT_MODE:
+            row.pack(fill="x", padx=14, pady=(0, 10))
         tk.Label(row, text="줍기 키:",
                  font=("맑은 고딕", 10), bg=COLOR_CARD).pack(side="left")
         self.pickup_key_var = tk.StringVar(value="z")
@@ -1264,6 +1273,17 @@ class MacroApp:
             ttk.Entry(row, textvariable=self.mp_pct_var,
                       width=5, justify="right").pack(side="left", padx=4)
             tk.Label(row, text="% 이하일 때 사용  (비우면 안 씀)",
+                     font=("맑은 고딕", 9), bg=COLOR_CARD,
+                     fg=COLOR_SUBTEXT).pack(side="left")
+
+            row = tk.Frame(card, bg=COLOR_CARD)
+            row.pack(fill="x", padx=14, pady=(2, 4))
+            tk.Label(row, text="  스킬 시전 시간:",
+                     font=("맑은 고딕", 10), bg=COLOR_CARD).pack(side="left")
+            self.cast_var = tk.StringVar(value="1.8")
+            ttk.Entry(row, textvariable=self.cast_var, width=6,
+                      justify="right").pack(side="left", padx=4)
+            tk.Label(row, text="초   (누른 뒤 실제로 나가기까지 걸리는 시간)",
                      font=("맑은 고딕", 9), bg=COLOR_CARD,
                      fg=COLOR_SUBTEXT).pack(side="left")
 
@@ -1475,6 +1495,7 @@ class MacroApp:
             self.hp_halt_var.set(str(c.get("hp_halt_percent", 15)))
             self.travel_var.set(bool(c.get("char_travel_enabled", True)))
             self.speed_var.set(str(c.get("char_speed_px_sec", 300)))
+            self.cast_var.set(sec_text(c.get("skill_cast_ms", 1800)))
             self._sync_bar_labels()
         self.failsafe_var.set(bool(c.get("failsafe_corner", True)))
         self.pause_user_var.set(bool(c.get("pause_on_user_input", True)))
@@ -1535,6 +1556,7 @@ class MacroApp:
             if HUNT_MODE:
                 c["combat_enabled"] = bool(self.combat_var.get())
                 c["char_travel_enabled"] = bool(self.travel_var.get())
+                c["skill_cast_ms"] = max(0, sec_to_ms(self.cast_var.get(), 1800))
                 skills = []
                 for kv, cv in self.skill_vars:
                     k = kv.get().strip()

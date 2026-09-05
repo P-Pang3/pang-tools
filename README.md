@@ -5,7 +5,7 @@ Windows 화면 자동화 보조 도구 세 가지.
 | 프로그램 | 하는 일 | 크기 |
 |---|---|---|
 | **줍기 도우미** | 화면에서 지정한 이미지를 찾아 자동으로 클릭한다 | 219 KB |
-| **사냥 도우미** | 대상을 공격하고 체력이 낮으면 회복 키를 쓴다 | 219 KB |
+| **사냥 도우미** | 대상을 공격하고 버프·회복을 챙긴다 | 219 KB |
 | **오토 클릭** | 정해진 간격으로 마우스·키를 반복 입력한다 | 79 KB |
 
 셋은 독립 프로그램이다. 필요한 것만 받아 쓰면 된다.
@@ -44,7 +44,8 @@ Python 이 없다면 [python.org](https://www.python.org/downloads/) 에서 받�
 
 ## 사냥 도우미
 
-줍기에 더해 대상을 공격하고 회복 키를 쓴다.
+대상을 공격하고 버프와 회복을 챙긴다. **줍기는 하지 않는다** —
+그건 줍기 도우미의 몫이다.
 
 1. **템플릿** 탭에서 대상을 캡처하고 **종류를 `몬스터`** 로
 2. **설정** 탭 → **⚔ 사냥** → `사냥 모드 사용` 체크
@@ -54,21 +55,23 @@ Python 이 없다면 [python.org](https://www.python.org/downloads/) 에서 받�
 동작 우선순위는 이 순서로 고정이다.
 
 ```
-체력 위험      →  정지
-체력 / 마나 부족 →  회복 키
-대상 있음       →  공격
-아이템 있음     →  줍기
+체력 위험        →  정지
+체력 / 마나 부족  →  회복 키
+버프 시간 만료    →  버프 다시 걸기
+대상 있음        →  공격
 ```
 
-체력이 바닥인데 아이템을 주우러 가면 죽으므로, **회복은 언제나 전투보다
-먼저다.** 공격은 `스킬키 → 대상 클릭` 순서로 나가고, 스킬 세 개를
-쿨다운에 맞춰 돌려 쓴다.
+**회복과 버프가 언제나 전투보다 먼저다.** 체력이 바닥인데 계속 때리면 죽는다.
+
+공격은 `스킬키 → 대상 클릭` 순서로 나가고, 스킬 세 개를 쿨다운에 맞춰
+돌려 쓴다. 이 게임은 클릭하면 캐릭터가 대상까지 걸어간 뒤 시전하므로,
+**이동 시간과 시전 시간을 기다린 다음** 다음 스킬을 쓴다.
 
 체력 바를 지정하지 않으면 회복도 위험 정지도 동작하지 않는다.
 
 ## 오토 클릭
 
-간격(ms), 마우스 버튼, 키, 반복 횟수, 클릭 위치(커서 자리 / 고정 좌표)를
+간격(초), 마우스 버튼, 키, 반복 횟수, 클릭 위치(커서 자리 / 고정 좌표)를
 정한다. 마우스와 키를 함께 쓸 수도 있다. 화면을 보지 않으므로 가장 가볍다.
 
 ---
@@ -143,12 +146,16 @@ core/
 ### 테스트
 
 ```bash
-python tests/test_detection.py    # 검출 정확도
-python tests/test_safety.py       # 안전 장치 11종
-python tests/test_combat.py       # 행동 우선순위·스킬 20종
-python tests/test_update.py       # 업데이트 로직 15종
-python tests/test_autoclick.py    # 오토 클릭 9종
-python tests/bench_detection.py   # 스캔 속도
+python tests/test_detection.py     # 검출 정확도
+python tests/test_safety.py        # 안전 장치 12종
+python tests/test_combat.py        # 행동 우선순위·스킬·버프 26종
+python tests/test_hunt_only.py     # 사냥 전용 동작
+python tests/test_buff_timing.py   # 버프 간격
+python tests/test_travel.py        # 이동 시간 계산
+python tests/test_drift.py         # 개입 감지 오탐
+python tests/test_update.py        # 업데이트 로직 15종
+python tests/test_autoclick.py     # 오토 클릭 10종
+python tests/bench_detection.py    # 스캔 속도
 ```
 
 콘솔이 CP949 라 로그의 이모지에서 죽는다. `PYTHONIOENCODING=utf-8` 을 붙여

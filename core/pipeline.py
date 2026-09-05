@@ -355,8 +355,10 @@ class Pipeline:
         if action.kind == ATTACK and action.skill:
             if self.hands.press_key(action.skill, self._stop_event):
                 return None
-            # 쿨다운은 캐릭터가 도착해 시전하는 시점부터 재야 맞는다
-            self.policy.note_skill(action.skill, self._travel_ms(t) / 1000.0)
+            # 쿨다운은 스킬이 실제로 나가는 시점부터 재야 맞는다.
+            # 이동해서 도착하고, 시전 동작까지 끝나야 발동한다.
+            delay = (self._travel_ms(t) + self._cf("skill_cast_ms", 1800)) / 1000.0
+            self.policy.note_skill(action.skill, delay)
             self.stats.note_key()
             gap = self._cf("skill_click_gap_ms", 90)
             if gap > 0 and self.hands.sleep_ms(gap, self._stop_event):
@@ -380,10 +382,16 @@ class Pipeline:
         self.guard.note_success()
 
         if action.kind == ATTACK:
+            # 클릭한 뒤 실제로 스킬이 나가기까지 두 단계가 더 있다.
+            #   1) 캐릭터가 대상 앞까지 걸어간다
+            #   2) 시전 동작이 끝나야 스킬이 발동한다
+            # 둘 다 기다려야 다음 스킬이 헛돌지 않는다.
             travel = self._travel_ms(t)
-            if travel > 200:
-                self._log(f"  ↳ 이동 {travel/1000:.1f}초 예상 — 그만큼 더 기다림")
-            return self._cf("attack_interval_ms", 1500) + travel
+            cast = self._cf("skill_cast_ms", 1800) if action.skill else 0.0
+            if travel > 200 or cast > 0:
+                self._log(f"  ↳ 이동 {travel/1000:.1f}초 + "
+                          f"시전 {cast/1000:.1f}초 기다림")
+            return self._cf("attack_interval_ms", 1500) + travel + cast
         return None
 
     def _travel_ms(self, target) -> float:
@@ -438,6 +446,10 @@ class Pipeline:
     # 루프 3 — 줍기 키
     # ------------------------------------------------------------------
     def _key_loop(self):
+        # 줍기 키는 줍기를 할 때만 의미가 있다.
+        # 사냥 전용에서는 누를 이유가 없다.
+        if not self._c("pickup_enabled", True):
+            return
         next_at = time.monotonic()
         while self._alive():
             if self._resting() or self._blocked():

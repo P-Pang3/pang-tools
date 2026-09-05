@@ -109,6 +109,9 @@ class CombatPolicy:
                 return act
 
         # ── 4. 줍기 ──────────────────────────────────────────────
+        # 사냥 전용 프로그램에서는 이 단계가 통째로 빠진다.
+        if not self._c("pickup_enabled", True):
+            return IDLE_ACTION
         item = self._pick_target(tracker, cursor, kind="item")
         if item is not None:
             return Action(PICKUP, target=item)
