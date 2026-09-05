@@ -12,8 +12,8 @@ from pathlib import Path
 VERSION = "1.0.0"
 
 # 업데이트를 받아올 곳. 비워두면 업데이트 기능이 꺼진다.
-GITHUB_OWNER = ""
-GITHUB_REPO = ""
+GITHUB_OWNER = "P-Pang3"
+GITHUB_REPO = "pang-tools"
 
 # 이 배포본이 어떤 프로그램인지 — 릴리스 asset 이름을 고르는 데 쓴다
 APP_ID = "dev"          # pickup | hunt | autoclick | dev
