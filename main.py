@@ -152,7 +152,9 @@ DEFAULT_CONFIG = {
     "buff_enabled": False,
     "buff_skills": [],              # [{"key": "f1", "duration": 300}, ...]
     "buff_margin_sec": 5,           # 끝나기 몇 초 전에 미리 걸까
-    "buff_gap_ms": 400,             # 버프 쓰고 다음 행동까지
+    # 버프는 시전 동작이 끝나야 걸린다. 그 사이에 다음 입력이 들어가면
+    # 시전이 끊기므로 넉넉히 기다린다.
+    "buff_gap_ms": 2000,
     "attack_timeout_sec": 12,       # 이 시간 안에 못 잡으면 대상 교체
     "engage_block_sec": 15,         # 포기한 대상을 다시 안 보는 시간
     # HP/MP 바 — 설정 탭에서 영역을 지정하면 채워진다
@@ -322,6 +324,18 @@ class MacroApp:
     # -------------------------------------------------
     # Config
     # -------------------------------------------------
+    @staticmethod
+    def _migrate(cfg: dict):
+        """옛 설정을 손봐준다. 제자리에서 고친다.
+
+        기본값을 바꿔도 이미 저장된 설정에는 옛 값이 남는다. 그게 지금은
+        못 쓰는 값이라면 올려줘야 한다 — 사용자가 고른 적 없는 값이기 때문이다.
+        """
+        # 버프 간격 0.4초는 시전 시간보다 짧아 두 번째 버프부터 끊겼다.
+        # UI 에 노출된 적이 없던 값이므로 일부러 고른 것일 리 없다.
+        if cfg.get("buff_gap_ms", 2000) <= 500:
+            cfg["buff_gap_ms"] = 2000
+
     def _load_config(self) -> dict:
         if CONFIG_FILE.exists():
             try:
@@ -331,6 +345,7 @@ class MacroApp:
                 # templates 는 리스트 타입 — 구버전에 있던 경우 그대로 보존
                 if isinstance(raw.get("templates"), list):
                     cfg["templates"] = raw["templates"]
+                self._migrate(cfg)
                 return cfg
             except Exception as e:
                 messagebox.showwarning("설정 로드 실패",
@@ -1198,6 +1213,18 @@ class MacroApp:
                          fg=COLOR_SUBTEXT).pack(side="left")
                 self.buff_vars.append((kv, dv))
 
+            brow = tk.Frame(card, bg=COLOR_CARD)
+            brow.pack(fill="x", padx=14, pady=(2, 4))
+            tk.Label(brow, text="  버프 간격:",
+                     font=("맑은 고딕", 10), bg=COLOR_CARD).pack(side="left")
+            self.buff_gap_var = tk.StringVar(value="2")
+            ttk.Entry(brow, textvariable=self.buff_gap_var, width=6,
+                      justify="right").pack(side="left", padx=4)
+            tk.Label(brow,
+                     text="초   (시전이 끝날 때까지 기다립니다. 버프가 안 걸리면 늘리세요)",
+                     font=("맑은 고딕", 9), bg=COLOR_CARD,
+                     fg=COLOR_SUBTEXT).pack(side="left")
+
             row = tk.Frame(card, bg=COLOR_CARD)
             row.pack(fill="x", padx=14, pady=(8, 4))
             tk.Label(row, text="HP 물약 키:",
@@ -1407,6 +1434,7 @@ class MacroApp:
                     kv.set("")
                     cv.set("0")
             self.buff_on_var.set(bool(c.get("buff_enabled", False)))
+            self.buff_gap_var.set(sec_text(c.get("buff_gap_ms", 2000)))
             buffs = c.get("buff_skills") or []
             for i, (kv, dv) in enumerate(self.buff_vars):
                 if i < len(buffs) and isinstance(buffs[i], dict):
@@ -1503,6 +1531,8 @@ class MacroApp:
                     if dur > 0:
                         buffs.append({"key": k, "duration": dur})
                 c["buff_skills"] = buffs
+                c["buff_gap_ms"] = max(
+                    100, sec_to_ms(self.buff_gap_var.get(), 2000))
                 c["hp_potion_key"] = self.hp_key_var.get().strip()
                 c["mp_potion_key"] = self.mp_key_var.get().strip()
                 try:

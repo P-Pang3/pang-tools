@@ -304,10 +304,17 @@ class Pipeline:
         # ── 버프 ──
         if action.kind == BUFF:
             self._log(f"✨  버프 '{action.key.upper()}' — {action.reason}")
-            if not self.hands.press_key(action.key, self._stop_event):
-                self.policy.note_buff(action.key)
-                self.stats.note_key()
-            return self._cf("buff_gap_ms", 400)
+            if self.hands.press_key(action.key, self._stop_event):
+                return None
+            self.policy.note_buff(action.key)
+            self.stats.note_key()
+            # 시전이 끝날 때까지 여기서 기다린다. 반환값으로 넘기면
+            # 지터가 붙어 2초가 1.6초로 줄 수 있고, 그 사이 다음 입력이
+            # 들어가면 시전이 끊긴다.
+            gap = self._cf("buff_gap_ms", 2000)
+            if gap > 0 and self.hands.sleep_ms(gap, self._stop_event):
+                return None
+            return 50      # 시전은 기다렸으니 다음 버프로 바로 넘어간다
 
         # ── 회복 ──
         if action.kind in (HEAL_HP, HEAL_MP):
